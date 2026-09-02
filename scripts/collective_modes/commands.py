@@ -10,7 +10,20 @@ from statistics import mean
 
 import numpy as np
 
-from .core import complex_acf, complex_cross_acf, coordinates, cylindrical_basis, cylindrical_currents, integrate_vacf, stable_order, velocity_in_frame, velocities
+from .core import (
+    axial_currents,
+    axial_positions,
+    axial_velocities,
+    complex_acf,
+    complex_cross_acf,
+    coordinates,
+    cylindrical_basis,
+    cylindrical_currents,
+    integrate_vacf,
+    stable_order,
+    velocity_in_frame,
+    velocities,
+)
 from .dump import Frame, infer_fluid_hint, infer_protocol_hint, inspect_dump, iter_frames, validate_uniform_timestep
 from .output import require_columns, write_csv, write_metadata
 from .schema import CaseProfile, REQUIREMENTS
@@ -45,7 +58,7 @@ def _profile(args) -> CaseProfile:
     if profile.axis_source == "fixed" and args.axis_xy is None:
         raise ValueError("--axis-source fixed requires --axis-xy X Y")
     if profile.wall_model == "implicit" and profile.rcnt_A is None:
-        raise ValueError("--wall-model implicit requires --rcnt-A from the CNT field/protocol metadata")
+        raise ValueError("--wall-model implicit requires --r-mode-A from protocol metadata")
     if profile.wall_model == "explicit_flexible" and not profile.cnt_types:
         raise ValueError("--wall-model explicit_flexible requires --cnt-types; do not assume a fixed box axis")
     return profile
@@ -111,6 +124,15 @@ def _aggregate(rows: list[dict], keys: list[str], value_fields: list[str], repli
     return output
 
 
+def _assert_unique_rows(rows: list[dict], fields: tuple[str, ...], label: str) -> None:
+    seen: set[tuple[str, ...]] = set()
+    for row in rows:
+        key = tuple(str(row[field]) for field in fields)
+        if key in seen:
+            raise ValueError(f"{label} contains duplicate key {dict(zip(fields, key))}; refusing ambiguous row overwrite")
+        seen.add(key)
+
+
 def audit(args) -> None:
     profile = _profile(args)
     rows = []
@@ -133,7 +155,7 @@ def audit(args) -> None:
     fields = list(rows[0])
     write_csv(args.output / "dump_capabilities.csv", rows, fields)
     write_metadata(args.output, {"case_id": profile.case_id, "protocol_label": profile.protocol_label,
-        "wall_model": profile.wall_model, "axis_source": profile.axis_source, "rcnt_A": profile.rcnt_A,
+        "wall_model": profile.wall_model, "axis_source": profile.axis_source, "mode_projection_radius_A": profile.rcnt_A,
         "important_limit": "dump-content inference detects fields/capabilities only. A water-only dump cannot prove explicit versus implicit CNT; declare wall_model in profile."})
 
 
@@ -146,31 +168,33 @@ def isf(args) -> None:
         cylindrical = bool(np.any(m_values))
         profile.require("cylindrical_isf" if cylindrical else "axial_isf", frames[0].fields)
         dt = _cadence(frames, profile, args.dt_ps)
-        axis = _axis(frames[0], args, profile) if cylindrical else frames[0].box_center[:2]
+        axis = _axis(frames[0], args, profile) if cylindrical else None
         lz = frames[0].box_lengths[2]
-        rcnt = profile.rcnt_A or 1.0
-        positions = np.asarray([coordinates(frame, unwrapped=True) for frame in frames])
+        r_mode = profile.rcnt_A or 1.0
         if cylindrical:
+            positions = np.asarray([coordinates(frame, unwrapped=True) for frame in frames])
             theta = np.asarray([cylindrical_basis(xyz, axis)[1] for xyz in positions])
+            z = positions[:, :, 2]
         else:
-            theta = np.zeros(positions.shape[:2])
+            z = np.asarray([axial_positions(frame, unwrapped=True) for frame in frames])
+            theta = np.zeros_like(z)
         max_lag = min(int(round(args.max_lag_ps / dt)), len(frames) - 1)
         for n in n_values:
             for m in m_values:
                 k = 2 * np.pi * n / lz
-                phase = np.exp(1j * (k * positions[:, :, 2] + m * theta))
+                phase = np.exp(1j * (k * z + m * theta))
                 rho = phase.sum(axis=1)
-                total = complex_acf(rho[:, None], max_lag, demean=False)[:, 0].real / positions.shape[1]
-                self_corr = complex_acf(phase, max_lag, demean=False).real.sum(axis=1) / positions.shape[1]
+                total = complex_acf(rho[:, None], max_lag, demean=False)[:, 0].real / z.shape[1]
+                self_corr = complex_acf(phase, max_lag, demean=False).real.sum(axis=1) / z.shape[1]
                 for lag, (f_total, f_self) in enumerate(zip(total, self_corr)):
                     per_rows.append({"case_id": profile.case_id, "replica": replica, "source_path": str(source),
-                        "n": int(n), "m": int(m), "kz_inv_A": float(k), "ktheta_inv_A": float(m / rcnt), "q_inv_A": float(np.hypot(k, m / rcnt)),
+                        "n": int(n), "m": int(m), "kz_inv_A": float(k), "ktheta_inv_A": float(m / r_mode), "q_inv_A": float(np.hypot(k, m / r_mode)),
                         "lag_ps": lag * dt, "F_total": float(f_total), "F_self": float(f_self), "F_distinct": float(f_total - f_self),
                         "n_time_origins": len(frames) - lag})
     names = list(per_rows[0]); write_csv(args.output / "isf_per_replica.csv", per_rows, names)
     aggregate = _aggregate(per_rows, ["case_id", "n", "m", "kz_inv_A", "ktheta_inv_A", "q_inv_A", "lag_ps"], ["F_total", "F_self", "F_distinct"])
     write_csv(args.output / "isf_ensemble_mean_sem.csv", aggregate, list(aggregate[0]))
-    write_metadata(args.output, {"case_id": profile.case_id, "observable": "F/Fs/Fd cylindrical density ISF", "n_values": n_values.tolist(), "m_values": m_values.tolist(), "profile": profile.__dict__})
+    write_metadata(args.output, {"case_id": profile.case_id, "observable": "F/Fs/Fd cylindrical density ISF", "n_values": n_values.tolist(), "m_values": m_values.tolist(), "mode_projection_radius_A": r_mode, "profile": profile.__dict__})
 
 
 def current(args) -> None:
@@ -178,51 +202,70 @@ def current(args) -> None:
     n_values, m_values = _numbers(args.n), _numbers(args.m)
     if any(n == 0 and m == 0 for n in n_values for m in m_values):
         raise ValueError("current modes exclude (n,m)=(0,0); use a dedicated zero-mode observable if needed")
+    cylindrical = bool(np.any(m_values != 0))
     per_rows: list[dict] = []; cross_rows: list[dict] = []; spectrum_rows: list[dict] = []
     for replica, source in enumerate(profile.dump_paths, 1):
         frames = _frames(source, profile.selected_types, args.max_frames)
-        profile.require("cylindrical_current", frames[0].fields)
+        profile.require("cylindrical_current" if cylindrical else "axial_current", frames[0].fields)
         dt = _cadence(frames, profile, args.dt_ps)
-        axis = _axis(frames[0], args, profile)
+        axis = _axis(frames[0], args, profile) if cylindrical else None
         lz = frames[0].box_lengths[2]
-        if profile.rcnt_A is None:
-            raise ValueError("current modes require --rcnt-A from CNT geometry metadata")
+        if cylindrical and profile.rcnt_A is None:
+            raise ValueError("cylindrical current modes require --rcnt-A as the declared mode-projection radius")
+        r_mode = profile.rcnt_A or 1.0
+        channels = ("Jz", "Jr", "Jtheta", "L", "Tinplane", "Tr") if cylindrical else ("Jz", "L")
         series: dict[str, list[np.ndarray]] = defaultdict(list)
         for frame in frames:
-            xyz = coordinates(frame); velocity = velocity_in_frame(velocities(frame), args.velocity_frame)
-            currents = cylindrical_currents(xyz, velocity, frame.box_lengths[2], axis, profile.rcnt_A, n_values, m_values)
-            for channel in ("Jz", "Jr", "Jtheta", "L", "Tinplane", "Tr"):
+            if cylindrical:
+                xyz = coordinates(frame)
+                velocity = velocity_in_frame(velocities(frame), args.velocity_frame)
+                currents = cylindrical_currents(xyz, velocity, frame.box_lengths[2], axis, r_mode, n_values, m_values)
+            else:
+                vz = axial_velocities(frame)
+                if args.velocity_frame == "selected_com":
+                    vz = vz - vz.mean()
+                elif args.velocity_frame == "wall_relative":
+                    raise ValueError("wall_relative axial current requires an explicit wall-velocity input and is unsupported")
+                currents = axial_currents(axial_positions(frame), vz, frame.box_lengths[2], n_values)
+            for channel in channels:
                 series[channel].append(currents[channel].reshape(-1))
         flattened = {key: np.asarray(value) for key, value in series.items()}
         max_lag = min(int(round(args.max_lag_ps / dt)), len(frames) - 1)
+        n_particles = len(frames[0].values)
         for channel, values in flattened.items():
             acf = complex_acf(values, max_lag).real
             c0 = acf[0]
             for index, (n, m) in enumerate((int(n), int(m)) for n in n_values for m in m_values):
                 for lag, value in enumerate(acf[:, index]):
                     per_rows.append({"case_id": profile.case_id, "replica": replica, "source_path": str(source), "channel": channel,
-                        "n": n, "m": m, "kz_inv_A": float(2*np.pi*n/lz), "ktheta_inv_A": float(m/profile.rcnt_A), "q_inv_A": float(np.hypot(2*np.pi*n/lz, m/profile.rcnt_A)),
-                        "lag_ps": lag*dt, "CJJ_raw": float(value), "CJJ_normalized": float(value/c0[index]) if c0[index] != 0 else float("nan"),
-                        "CJJ0": float(c0[index]), "n_time_origins": len(frames)-lag})
+                        "n": n, "m": m, "kz_inv_A": float(2*np.pi*n/lz), "ktheta_inv_A": float(m/r_mode), "q_inv_A": float(np.hypot(2*np.pi*n/lz, m/r_mode)),
+                        "lag_ps": lag*dt, "n_particles": n_particles,
+                        "CJJ_extensive": float(value), "CJJ_per_particle": float(value / n_particles),
+                        "CJJ_normalized": float(value/c0[index]) if c0[index] != 0 else float("nan"),
+                        "CJJ0_extensive": float(c0[index]), "CJJ0_per_particle": float(c0[index] / n_particles), "n_time_origins": len(frames)-lag})
             centred = values - values.mean(axis=0, keepdims=True)
             frequency = np.fft.fftfreq(len(values), dt)
             power = np.abs(np.fft.fft(centred, axis=0))**2 / len(values)
             for index, (n, m) in enumerate((int(n), int(m)) for n in n_values for m in m_values):
                 for freq, item in zip(frequency[frequency >= 0], power[frequency >= 0, index]):
                     spectrum_rows.append({"case_id": profile.case_id, "replica": replica, "channel": channel, "n": n, "m": m,
-                        "kz_inv_A": float(2*np.pi*n/lz), "ktheta_inv_A": float(m/profile.rcnt_A), "frequency_ps_inv": float(freq), "periodogram_power": float(item), "estimator": "whole-record rectangular periodogram"})
-        for left, right in (("L", "Tinplane"), ("Tinplane", "L"), ("L", "Tr"), ("Tr", "L")):
+                        "kz_inv_A": float(2*np.pi*n/lz), "ktheta_inv_A": float(m/r_mode), "frequency_ps_inv": float(freq), "n_particles": n_particles,
+                        "periodogram_power_extensive": float(item), "periodogram_power_per_particle": float(item / n_particles), "estimator": "whole-record rectangular periodogram"})
+        cross_pairs = (("L", "Tinplane"), ("Tinplane", "L"), ("L", "Tr"), ("Tr", "L")) if cylindrical else ()
+        for left, right in cross_pairs:
             cross = complex_cross_acf(flattened[left], flattened[right], max_lag).real
             for index, (n, m) in enumerate((int(n), int(m)) for n in n_values for m in m_values):
                 for lag, value in enumerate(cross[:, index]):
                     cross_rows.append({"case_id": profile.case_id, "replica": replica, "left_channel": left, "right_channel": right, "n": n, "m": m,
-                        "kz_inv_A": float(2*np.pi*n/lz), "ktheta_inv_A": float(m/profile.rcnt_A), "q_inv_A": float(np.hypot(2*np.pi*n/lz, m/profile.rcnt_A)), "lag_ps": lag*dt, "C_AB_ordered_raw": float(value)})
+                        "kz_inv_A": float(2*np.pi*n/lz), "ktheta_inv_A": float(m/r_mode), "q_inv_A": float(np.hypot(2*np.pi*n/lz, m/r_mode)), "lag_ps": lag*dt, "n_particles": n_particles,
+                        "C_AB_ordered_extensive": float(value), "C_AB_ordered_per_particle": float(value / n_particles)})
     write_csv(args.output / "current_per_replica.csv", per_rows, list(per_rows[0]))
-    aggregate = _aggregate(per_rows, ["case_id", "channel", "n", "m", "kz_inv_A", "ktheta_inv_A", "q_inv_A", "lag_ps"], ["CJJ_raw", "CJJ_normalized", "CJJ0"])
+    aggregate = _aggregate(per_rows, ["case_id", "channel", "n", "m", "kz_inv_A", "ktheta_inv_A", "q_inv_A", "lag_ps"], ["CJJ_extensive", "CJJ_per_particle", "CJJ_normalized", "CJJ0_extensive", "CJJ0_per_particle"])
     write_csv(args.output / "current_ensemble_mean_sem.csv", aggregate, list(aggregate[0]))
-    write_csv(args.output / "current_cross_ordered_per_replica.csv", cross_rows, list(cross_rows[0]))
+    if cross_rows:
+        write_csv(args.output / "current_cross_ordered_per_replica.csv", cross_rows, list(cross_rows[0]))
     write_csv(args.output / "current_spectrum_per_replica.csv", spectrum_rows, list(spectrum_rows[0]))
-    write_metadata(args.output, {"case_id": profile.case_id, "observable": "C_JJ channels and ordered cross kernels", "channels": ["Jz", "Jr", "Jtheta", "L", "Tinplane", "Tr"], "n_values": n_values.tolist(), "m_values": m_values.tolist(), "profile": profile.__dict__, "cross_kernel_definition": "Re<delta J_A(t+tau) delta J_B(t)*>; C_AB and C_BA are separately stored"})
+    write_metadata(args.output, {"case_id": profile.case_id, "observable": "C_JJ channels and ordered cross kernels", "channels": list(channels), "n_values": n_values.tolist(), "m_values": m_values.tolist(), "profile": profile.__dict__, "current_normalization": "CJJ_extensive is the fluctuating current ACF; CJJ_per_particle=CJJ_extensive/N; CJJ_normalized=CJJ_extensive/CJJ0_extensive", "mode_phase": "exp[-i(kz*z + m*theta)]; m/R_mode is used only for q and L/T projection", "cross_kernel_definition": "Re<delta J_A(t+tau) delta J_B(t)*>; C_AB and C_BA are separately stored"})
 
 
 def vacf(args) -> None:
@@ -236,10 +279,15 @@ def vacf(args) -> None:
         axis = _axis(frames[0], args, profile) if args.component != "z" else frames[0].box_center[:2]
         signal = []
         for frame in frames:
-            velocity = velocity_in_frame(velocities(frame), args.velocity_frame)
             if args.component == "z":
-                signal.append(velocity[:, 2])
+                vz = axial_velocities(frame)
+                if args.velocity_frame == "selected_com":
+                    vz = vz - vz.mean()
+                elif args.velocity_frame == "wall_relative":
+                    raise ValueError("wall_relative z-VACF requires an explicit wall-velocity input and is unsupported")
+                signal.append(vz)
             else:
+                velocity = velocity_in_frame(velocities(frame), args.velocity_frame)
                 xyz = coordinates(frame); _, _, basis = cylindrical_basis(xyz, axis)
                 er, etheta = basis[:, :, 0], basis[:, :, 1]
                 signal.append(np.sum(velocity[:, :2] * (er if args.component == "r" else etheta), axis=1))
@@ -267,58 +315,81 @@ def construct(args) -> None:
         isf = list(csv.DictReader(handle))
     with args.weights_csv.open(newline="", encoding="utf-8") as handle:
         weights = list(csv.DictReader(handle))
-    require_columns(set(current[0]), {"n", "m", "lag_ps", args.current_column}, "current CSV")
-    require_columns(set(isf[0]), {"n", "m", "lag_ps", args.self_column}, "ISF CSV")
+    require_columns(set(current[0]), {"case_id", "replica", "n", "m", "lag_ps", args.current_column}, "current CSV")
+    require_columns(set(isf[0]), {"case_id", "replica", "n", "m", "lag_ps", args.self_column}, "ISF CSV")
     require_columns(set(weights[0]), {"n", "m", "weight"}, "weights CSV")
+    _assert_unique_rows(weights, ("n", "m"), "weights CSV")
     weight_map = {(int(row["n"]), int(row["m"])): float(row["weight"]) for row in weights}
     require_columns(set(current[0]), {"channel"}, "current CSV")
-    current_map = {(int(row["n"]), int(row["m"]), float(row["lag_ps"])): float(row[args.current_column]) for row in current if row["channel"] == args.current_channel}
+    current = [row for row in current if row["channel"] == args.current_channel]
+    _assert_unique_rows(current, ("case_id", "replica", "n", "m", "lag_ps"), "filtered current CSV")
+    _assert_unique_rows(isf, ("case_id", "replica", "n", "m", "lag_ps"), "ISF CSV")
+    current_map = {
+        (row["case_id"], row["replica"], int(row["n"]), int(row["m"]), row["lag_ps"]): float(row[args.current_column])
+        for row in current
+    }
     output = []
     for row in isf:
-        n, m, lag = int(row["n"]), int(row["m"]), float(row["lag_ps"])
-        key = (n, m, lag)
+        case_id, replica = row["case_id"], row["replica"]
+        n, m, lag = int(row["n"]), int(row["m"]), row["lag_ps"]
+        key = (case_id, replica, n, m, lag)
         if (n, m) not in weight_map or key not in current_map:
             continue
         fs = float(row[args.self_column]); phi = current_map[key]; weight = weight_map[(n, m)]
-        output.append({"n": n, "m": m, "lag_ps": lag, "weight": weight, "Fs": fs, "Phi_J": phi, "term_WFsPhi": weight*fs*phi})
+        output.append({"case_id": case_id, "replica": replica, "n": n, "m": m, "lag_ps": float(lag), "weight": weight, "Fs": fs, "Phi_J": phi, "term_WFsPhi": weight*fs*phi})
     if not output:
         raise ValueError("No matched (n,m,lag) rows across current, ISF, and weights inputs")
-    grouped: dict[float, list[dict]] = defaultdict(list)
-    for row in output: grouped[row["lag_ps"]].append(row)
-    total = [{"lag_ps": lag, "construct_sum_WFsPhi": float(sum(item["term_WFsPhi"] for item in rows)), "n_modes": len(rows)} for lag, rows in sorted(grouped.items())]
+    grouped: dict[tuple[str, str, float], list[dict]] = defaultdict(list)
+    for row in output: grouped[(row["case_id"], row["replica"], row["lag_ps"])].append(row)
+    total = [
+        {"case_id": case_id, "replica": replica, "lag_ps": lag, "construct_sum_WFsPhi": float(sum(item["term_WFsPhi"] for item in rows)), "n_modes": len(rows)}
+        for (case_id, replica, lag), rows in sorted(grouped.items())
+    ]
+    ensemble = _aggregate(total, ["case_id", "lag_ps"], ["construct_sum_WFsPhi"])
     write_csv(args.output / "constructibility_per_mode.csv", output, list(output[0]))
-    write_csv(args.output / "constructibility_sum.csv", total, list(total[0]))
+    write_csv(args.output / "constructibility_sum_per_replica.csv", total, list(total[0]))
+    write_csv(args.output / "constructibility_sum_ensemble_mean_sem.csv", ensemble, list(ensemble[0]))
     comparison = []
     if args.vacf_csv is not None:
         with args.vacf_csv.open(newline="", encoding="utf-8") as handle:
             vacf = list(csv.DictReader(handle))
-        require_columns(set(vacf[0]), {"lag_ps", args.vacf_column}, "VACF CSV")
-        vacf_map = {float(row["lag_ps"]): float(row[args.vacf_column]) for row in vacf}
+        require_columns(set(vacf[0]), {"case_id", "replica", "lag_ps", args.vacf_column}, "VACF CSV")
+        _assert_unique_rows(vacf, ("case_id", "replica", "lag_ps"), "VACF CSV")
+        vacf_map = {(row["case_id"], row["replica"], float(row["lag_ps"])): float(row[args.vacf_column]) for row in vacf}
         for row in total:
-            if row["lag_ps"] in vacf_map:
-                value = vacf_map[row["lag_ps"]]
+            key = (row["case_id"], row["replica"], row["lag_ps"])
+            if key in vacf_map:
+                value = vacf_map[key]
                 comparison.append({**row, "VACF_direct": value, "construct_minus_VACF": row["construct_sum_WFsPhi"] - value})
         if comparison:
-            write_csv(args.output / "constructibility_vs_direct_vacf.csv", comparison, list(comparison[0]))
-    write_metadata(args.output, {"formula": "sum_(n,m) W(n,m) F_s(n,m,t) Phi_J(n,m,t)", "weight_policy": "external static weights only; no amplitude fit performed", "current_channel": args.current_channel, "current_column": args.current_column, "self_column": args.self_column, "direct_vacf_comparison": str(args.vacf_csv) if args.vacf_csv else None})
+            comparison_ensemble = _aggregate(comparison, ["case_id", "lag_ps"], ["construct_sum_WFsPhi", "VACF_direct", "construct_minus_VACF"])
+            write_csv(args.output / "constructibility_vs_direct_vacf_per_replica.csv", comparison, list(comparison[0]))
+            write_csv(args.output / "constructibility_vs_direct_vacf_ensemble_mean_sem.csv", comparison_ensemble, list(comparison_ensemble[0]))
+    write_metadata(args.output, {"formula": "sum_(n,m) W(n,m) F_s(n,m,t) Phi_J(n,m,t)", "weight_policy": "external static weights only; no amplitude fit performed", "replica_policy": "current, Fs, construction, and direct VACF are matched strictly within (case_id, replica, n, m, lag_ps); ensemble mean/SEM is calculated only after per-replica construction", "current_channel": args.current_channel, "current_column": args.current_column, "self_column": args.self_column, "direct_vacf_comparison": str(args.vacf_csv) if args.vacf_csv else None})
 
 
 def fit_current(args) -> None:
-    """Fit the stored normalized current kernel mode-by-mode without pooling k."""
+    """Fit each independent replica before estimating mode-level uncertainty."""
     from scipy.optimize import curve_fit
     with args.current_csv.open(newline="", encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle))
-    require_columns(set(rows[0]), {"n", "m", "lag_ps", "channel", args.column}, "current CSV")
-    grouped: dict[tuple[int, int], list[dict]] = defaultdict(list)
+    require_columns(set(rows[0]), {"case_id", "replica", "n", "m", "lag_ps", "channel", args.column}, "current CSV")
+    rows = [row for row in rows if row["channel"] == args.channel]
+    _assert_unique_rows(rows, ("case_id", "replica", "n", "m", "lag_ps"), "filtered current CSV")
+    grouped: dict[tuple[str, str, int, int], list[dict]] = defaultdict(list)
     for row in rows:
-        if row["channel"] == args.channel:
-            grouped[(int(row["n"]), int(row["m"]))].append(row)
+        grouped[(row["case_id"], row["replica"], int(row["n"]), int(row["m"]))].append(row)
     if not grouped:
         raise ValueError(f"No rows for channel={args.channel!r}")
-    def model(time, gamma, omega, a, b):
+    def carrier(time, gamma, omega, a, b):
         return np.exp(-gamma*time) * (a*np.cos(omega*time) + b*np.sin(omega*time))
+    def dho_physical(time, gamma, omega):
+        omega_safe = max(float(omega), np.finfo(float).eps)
+        return np.exp(-gamma*time) * (np.cos(omega*time) + gamma/omega_safe*np.sin(omega*time))
+    if args.model == "dho_physical" and args.fit_min_ps != 0.0:
+        raise ValueError("dho_physical requires --fit-min-ps 0 so C(0)=1 and C'(0)=0 are actually constrained")
     output = []
-    for (n, m), group in sorted(grouped.items()):
+    for (case_id, replica, n, m), group in sorted(grouped.items()):
         group.sort(key=lambda row: float(row["lag_ps"])); time = np.asarray([float(row["lag_ps"]) for row in group]); values = np.asarray([float(row[args.column]) for row in group])
         mask = (time >= args.fit_min_ps) & (time <= args.fit_max_ps)
         x, y = time[mask], values[mask]
@@ -326,14 +397,23 @@ def fit_current(args) -> None:
             raise ValueError(f"(n,m)=({n},{m}) has fewer than six fit points")
         omega0 = 2*np.pi/max(args.fit_max_ps-args.fit_min_ps, np.finfo(float).eps)
         try:
-            parameters, covariance = curve_fit(model, x, y, p0=(0.02, omega0, 1.0, 0.0), bounds=([0, 0, -np.inf, -np.inf], [np.inf, np.inf, np.inf, np.inf]), maxfev=100000)
-            prediction = model(x, *parameters); r2 = 1 - np.sum((y-prediction)**2)/max(np.sum((y-y.mean())**2), np.finfo(float).eps); errors = np.sqrt(np.diag(covariance))
+            if args.model == "dho_physical":
+                physical, covariance = curve_fit(dho_physical, x, y, p0=(0.02, omega0), bounds=([0, np.finfo(float).eps], [np.inf, np.inf]), maxfev=100000)
+                parameters = np.asarray([physical[0], physical[1], 1.0, physical[0]/physical[1]])
+                physical_errors = np.sqrt(np.diag(covariance)); errors = np.asarray([physical_errors[0], physical_errors[1], 0.0, np.nan])
+                prediction = dho_physical(x, *physical)
+            else:
+                parameters, covariance = curve_fit(carrier, x, y, p0=(0.02, omega0, 1.0, 0.0), bounds=([0, 0, -np.inf, -np.inf], [np.inf, np.inf, np.inf, np.inf]), maxfev=100000)
+                errors = np.sqrt(np.diag(covariance)); prediction = carrier(x, *parameters)
+            r2 = 1 - np.sum((y-prediction)**2)/max(np.sum((y-y.mean())**2), np.finfo(float).eps)
         except (RuntimeError, ValueError):
             parameters = np.full(4, np.nan); errors = np.full(4, np.nan); r2 = np.nan
         first = group[0]
-        output.append({"channel": args.channel, "n": n, "m": m, "kz_inv_A": first.get("kz_inv_A", ""), "ktheta_inv_A": first.get("ktheta_inv_A", ""), "q_inv_A": float(np.hypot(float(first.get("kz_inv_A", 0)), float(first.get("ktheta_inv_A", 0)))), "Gamma_ps_inv": float(parameters[0]), "omega_rad_ps": float(parameters[1]), "a": float(parameters[2]), "b": float(parameters[3]), "Gamma_SE": float(errors[0]), "omega_SE": float(errors[1]), "a_SE": float(errors[2]), "b_SE": float(errors[3]), "fit_R2": float(r2), "fit_min_ps": args.fit_min_ps, "fit_max_ps": args.fit_max_ps, "model": "exp(-Gamma*t)[a*cos(omega*t)+b*sin(omega*t)]"})
-    write_csv(args.output / "current_mode_DHO_parameters.csv", output, list(output[0]))
-    write_metadata(args.output, {"input": str(args.current_csv), "channel": args.channel, "column": args.column, "formula": "Phi_J(k,m,t)=exp(-Gamma(k,m)t)[a(k,m)cos(omega(k,m)t)+b(k,m)sin(omega(k,m)t)]", "important_limit": "one row per (n,m); no k-law is assumed or fitted. Any Gamma(q), omega(q), a(q), b(q) relation must be a separate protocol-aware analysis."})
+        output.append({"case_id": case_id, "replica": replica, "channel": args.channel, "n": n, "m": m, "kz_inv_A": first.get("kz_inv_A", ""), "ktheta_inv_A": first.get("ktheta_inv_A", ""), "q_inv_A": float(np.hypot(float(first.get("kz_inv_A", 0)), float(first.get("ktheta_inv_A", 0)))), "Gamma_ps_inv": float(parameters[0]), "omega_rad_ps": float(parameters[1]), "a": float(parameters[2]), "b": float(parameters[3]), "Gamma_curvefit_SE": float(errors[0]), "omega_curvefit_SE": float(errors[1]), "a_curvefit_SE": float(errors[2]), "b_curvefit_SE": float(errors[3]), "fit_R2": float(r2), "fit_min_ps": args.fit_min_ps, "fit_max_ps": args.fit_max_ps, "model": args.model})
+    aggregate = _aggregate(output, ["case_id", "channel", "n", "m", "kz_inv_A", "ktheta_inv_A", "q_inv_A", "fit_min_ps", "fit_max_ps", "model"], ["Gamma_ps_inv", "omega_rad_ps", "a", "b", "fit_R2"])
+    write_csv(args.output / "current_mode_fit_per_replica.csv", output, list(output[0]))
+    write_csv(args.output / "current_mode_fit_ensemble_mean_sem.csv", aggregate, list(aggregate[0]))
+    write_metadata(args.output, {"input": str(args.current_csv), "channel": args.channel, "column": args.column, "model": args.model, "formula": "damped_carrier: exp(-Gamma*t)[a*cos(omega*t)+b*sin(omega*t)]; dho_physical: exp(-Gamma*t)[cos(omega*t)+(Gamma/omega)sin(omega*t)]", "uncertainty_policy": "each independent replica is fit separately; ensemble Gamma/omega uncertainty is replica SEM, while curve_fit covariance is descriptive only", "important_limit": "no k-law is assumed or fitted. Any Gamma(q), omega(q), a(q), b(q) relation must be a separate protocol-aware analysis."})
 
 
 def plot(args) -> None:

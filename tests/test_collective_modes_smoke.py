@@ -9,6 +9,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import numpy as np
+
+from scripts.collective_modes.core import cylindrical_currents
+
 
 ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / "scripts" / "collective_modes_cli.py"
@@ -19,7 +23,14 @@ def synthetic_dump(path: Path) -> None:
     for step in range(0, 80, 10):
         lines += ["ITEM: TIMESTEP\n", f"{step}\n", "ITEM: NUMBER OF ATOMS\n", "3\n", "ITEM: BOX BOUNDS pp pp pp\n", "0 10\n", "0 10\n", "0 20\n", "ITEM: ATOMS id mol type x y z vx vy vz ix iy iz\n"]
         shift = step / 80.0
-        lines += [f"1 1 1 {5+shift:.6f} 5.0 {1+shift:.6f} 0.10 0.02 0.20 0 0 0\n", f"2 2 1 5.0 {6+shift:.6f} {7+shift:.6f} -0.10 0.03 -0.20 0 0 0\n", f"3 3 2 1.0 1.0 1.0 0.0 0.0 0.0 0 0 0\n"]
+        lines += [f"1 1 1 {6+shift:.6f} 5.0 {1+shift:.6f} 0.10 0.02 0.20 0 0 0\n", f"2 2 1 5.0 {6+shift:.6f} {7+shift:.6f} -0.10 0.03 -0.20 0 0 0\n", f"3 3 2 1.0 1.0 1.0 0.0 0.0 0.0 0 0 0\n"]
+    path.write_text("".join(lines), encoding="utf-8")
+
+
+def axial_dump(path: Path) -> None:
+    lines: list[str] = []
+    for step in range(0, 80, 10):
+        lines += ["ITEM: TIMESTEP\n", f"{step}\n", "ITEM: NUMBER OF ATOMS\n", "2\n", "ITEM: BOX BOUNDS pp pp pp\n", "0 10\n", "0 10\n", "0 20\n", "ITEM: ATOMS id type z vz\n", f"1 1 {1+step/100:.6f} 0.20\n", f"2 1 {7-step/100:.6f} -0.20\n"]
     path.write_text("".join(lines), encoding="utf-8")
 
 
@@ -45,9 +56,56 @@ class CanonicalCommandsSmokeTest(unittest.TestCase):
             weights = temp_path / "weights.csv"; weights.write_text("n,m,weight\n1,0,0.2\n1,1,0.1\n", encoding="utf-8")
             construct_dir = temp_path / "construct"; self.run_cli("construct", "--current-csv", str(current_dir / "current_per_replica.csv"), "--isf-csv", str(isf_dir / "isf_per_replica.csv"), "--weights-csv", str(weights), "--vacf-csv", str(vacf_dir / "vacf_per_replica.csv"), "--output", str(construct_dir))
             fit_dir = temp_path / "fit"; self.run_cli("fit-current", "--current-csv", str(current_dir / "current_per_replica.csv"), "--output", str(fit_dir), "--fit-max-ps", "0.06")
-            plot = temp_path / "plot.png"; self.run_cli("plot", "--csv", str(construct_dir / "constructibility_sum.csv"), "--x", "lag_ps", "--y", "construct_sum_WFsPhi", "--output", str(plot))
-            for expected in [isf_dir / "isf_ensemble_mean_sem.csv", current_dir / "current_cross_ordered_per_replica.csv", vacf_dir / "msd_alpha_from_vacf_ensemble_mean_sem.csv", construct_dir / "constructibility_sum.csv", construct_dir / "constructibility_vs_direct_vacf.csv", fit_dir / "current_mode_DHO_parameters.csv", plot]:
+            plot = temp_path / "plot.png"; self.run_cli("plot", "--csv", str(construct_dir / "constructibility_sum_ensemble_mean_sem.csv"), "--x", "lag_ps", "--y", "construct_sum_WFsPhi_mean", "--output", str(plot))
+            for expected in [isf_dir / "isf_ensemble_mean_sem.csv", current_dir / "current_cross_ordered_per_replica.csv", vacf_dir / "msd_alpha_from_vacf_ensemble_mean_sem.csv", construct_dir / "constructibility_sum_per_replica.csv", construct_dir / "constructibility_sum_ensemble_mean_sem.csv", construct_dir / "constructibility_vs_direct_vacf_per_replica.csv", fit_dir / "current_mode_fit_per_replica.csv", plot]:
                 self.assertTrue(expected.is_file(), expected)
+
+    def test_axial_minimal_field_dump_runs_all_axial_observables(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            temp_path = Path(temp); dump = temp_path / "oxygen_z_vz.dump"; axial_dump(dump)
+            common = ["--case-id", "axial", "--dumps", str(dump), "--fluid-types", "1", "--timestep-ps", "0.001", "--max-frames", "8"]
+            self.run_cli("isf", *common, "--output", str(temp_path / "isf"), "--n", "1", "--m", "0", "--max-lag-ps", "0.06")
+            self.run_cli("current", *common, "--output", str(temp_path / "current"), "--n", "1", "--m", "0", "--max-lag-ps", "0.06")
+            self.run_cli("vacf", *common, "--output", str(temp_path / "vacf"), "--component", "z", "--max-lag-ps", "0.06")
+            with (temp_path / "current" / "current_per_replica.csv").open() as handle:
+                rows = list(csv.DictReader(handle))
+            self.assertEqual({row["channel"] for row in rows}, {"Jz", "L"})
+            self.assertIn("CJJ_per_particle", rows[0])
+
+    def test_cylindrical_phase_and_projection_identities(self) -> None:
+        xyz = np.asarray([[6.0, 5.0, 2.0], [5.0, 6.0, 7.0]])
+        velocity = np.asarray([[0.3, 1.0, 2.0], [-0.7, 2.0, -1.0]])
+        n = np.asarray([1]); m0 = np.asarray([0]); m1 = np.asarray([1])
+        mode_a = cylindrical_currents(xyz, velocity, 20.0, np.asarray([5.0, 5.0]), 4.0, n, m1)
+        mode_b = cylindrical_currents(xyz, velocity, 20.0, np.asarray([5.0, 5.0]), 9.0, n, m1)
+        theta = np.arctan2(xyz[:, 1] - 5.0, xyz[:, 0] - 5.0)
+        expected = np.sum(velocity[:, 2] * np.exp(-1j * ((2*np.pi/20.0) * xyz[:, 2] + theta)))
+        self.assertTrue(np.allclose(mode_a["Jz"][0, 0], expected), "cylindrical current must use integer m*theta phase")
+        self.assertTrue(np.allclose(mode_a["Jz"], mode_b["Jz"]), "R_mode must not alter m*theta Fourier phase")
+        mzero = cylindrical_currents(xyz, velocity, 20.0, np.asarray([5.0, 5.0]), 4.0, n, m0)
+        self.assertTrue(np.allclose(mzero["L"], mzero["Jz"]))
+        self.assertTrue(np.allclose(mzero["Tinplane"], mzero["Jtheta"]))
+        nzero = cylindrical_currents(xyz, velocity, 20.0, np.asarray([5.0, 5.0]), 4.0, np.asarray([0]), m1)
+        self.assertTrue(np.allclose(nzero["L"], nzero["Jtheta"]))
+
+    def test_construct_matches_replicas_without_cross_mixing(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            temp_path = Path(temp)
+            current = temp_path / "current.csv"; isf = temp_path / "isf.csv"; weights = temp_path / "weights.csv"
+            current.write_text("case_id,replica,channel,n,m,lag_ps,CJJ_normalized\ncase,1,L,1,0,0.0,2.0\ncase,2,L,1,0,0.0,5.0\n", encoding="utf-8")
+            isf.write_text("case_id,replica,n,m,lag_ps,F_self\ncase,1,1,0,0.0,3.0\ncase,2,1,0,0.0,7.0\n", encoding="utf-8")
+            weights.write_text("n,m,weight\n1,0,0.1\n", encoding="utf-8")
+            output = temp_path / "construct"
+            self.run_cli("construct", "--current-csv", str(current), "--isf-csv", str(isf), "--weights-csv", str(weights), "--output", str(output))
+            with (output / "constructibility_sum_per_replica.csv").open() as handle:
+                values = {row["replica"]: float(row["construct_sum_WFsPhi"]) for row in csv.DictReader(handle)}
+            self.assertAlmostEqual(values["1"], 0.6)
+            self.assertAlmostEqual(values["2"], 3.5)
+            duplicate = temp_path / "duplicate_isf.csv"
+            duplicate.write_text(isf.read_text(encoding="utf-8") + "case,2,1,0,0.0,7.0\n", encoding="utf-8")
+            result = subprocess.run([sys.executable, str(CLI), "construct", "--current-csv", str(current), "--isf-csv", str(duplicate), "--weights-csv", str(weights), "--output", str(temp_path / "duplicate_out")], cwd=ROOT, capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("duplicate key", result.stderr)
 
 
 if __name__ == "__main__":

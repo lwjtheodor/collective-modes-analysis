@@ -26,8 +26,10 @@ or declared `--cnt-types` are actually present; a site-only fluid becomes
 declared. Filename hints
 such as `implicit` are recorded as non-authoritative hints only.
 
-For an implicit cylindrical analysis, `--rcnt-A` must be the CNT field radius
-from protocol metadata, never a density-peak estimate.  For flexible explicit
+For a cylindrical analysis, `--r-mode-A` is the declared thin-shell
+mode-projection radius. `--rcnt-A` remains a compatibility alias, but must not
+be used to blur CNT geometric radius, field radius, and fluid-shell radius.
+For flexible explicit
 CNT, the present command intentionally refuses a wall-relative calculation
 until a CNT-frame extractor with actual CNT atoms/velocities is supplied.
 
@@ -46,13 +48,37 @@ until a CNT-frame extractor with actual CNT atoms/velocities is supplied.
 |---|---|
 | `audit` | `dump_capabilities.csv` |
 | `isf` | `isf_per_replica.csv`, `isf_ensemble_mean_sem.csv`: `F_total`, `F_self`, `F_distinct` for every `(n,m,lag)` |
-| `current` | `current_per_replica.csv`, ensemble CJJ, ordered cross table, periodogram table; separate `Jz`, `Jr`, `Jtheta`, `L`, `Tinplane`, `Tr` |
+| `current` | `current_per_replica.csv`, ensemble CJJ, ordered cross table, periodogram table; explicit `CJJ_extensive`, `CJJ_per_particle`, `CJJ_normalized`, `n_particles`; separate `Jz`, `Jr`, `Jtheta`, `L`, `Tinplane`, `Tr` |
 | `vacf` | per-rep/ensemble VACF and `msd_alpha_from_vacf_*`; lab/selected-COM/wall-relative is explicit |
-| `fit-current` | `current_mode_DHO_parameters.csv`; a row for each `(n,m)` retaining `Gamma`, `omega`, `a`, `b`, standard errors and `R2` |
-| `construct` | per-mode and summed `W*Fs*Phi_J`, optional direct-VACF residual table; external static `W(n,m)` only, no amplitude fit |
+| `fit-current` | per-replica and ensemble-SEM mode-fit tables; `damped_carrier` is distinct from constrained `dho_physical` |
+| `construct` | per-replica then ensemble `W*Fs*Phi_J`, optional matched direct-VACF residual tables; external static `W(n,m)` only, no amplitude fit |
 | `plot` | a minimal data-readable PNG with zero line and columns named from the CSV |
 
-The retained current model is
+The cylindrical Fourier phase is always
+
+\[
+\exp[-i(k_z z+m\theta)].
+\]
+
+The integer `m`, rather than `m/R`, appears in the angular phase.  The
+thin-shell projection convention uses
+\(k_\theta=m/R_{\rm mode}\) only for \(q\) and L/T projection. The current
+metadata records that convention. Particles at the cylinder axis are rejected
+for cylindrical observables because \(\theta,\mathbf e_r,\mathbf e_\theta\)
+are undefined there.
+
+`CJJ_extensive` is the all-origin fluctuating current ACF. Its explicitly
+stored per-particle counterpart is
+
+\[
+C_{JJ}^{\rm per-particle}=C_{JJ}^{\rm extensive}/N,
+\]
+
+and `CJJ_normalized=CJJ_extensive/CJJ0_extensive`. Absolute CJJ, static
+weights, and spectral intensity comparisons must name which normalization is
+used.
+
+The unconstrained retained carrier model is
 
 \[
 \Phi_J(k_z,m;t)=\exp[-\Gamma(k_z,m)t]
@@ -65,10 +91,17 @@ and constructibility is written without a fitted global amplitude as
 C_{vv}^{\rm construct}(t)=\sum_{n,m}W(n,m)F_s(n,m;t)\Phi_J(n,m;t).
 \]
 
-`fit-current` does **not** fit a universal `Gamma(q)` or `omega(q)` law; its
+`fit-current --model damped_carrier` does **not** fit a universal `Gamma(q)` or `omega(q)` law; its
 CSV preserves the pointwise ​`kz`, `m/Rcnt`, `q`, `Gamma`, `omega`, `a`, and `b`
 relation for a later protocol-specific fit.  This avoids pooling C88/C99,
 explicit/implicit, or cadence-distinct data into a synthetic dispersion law.
+
+`damped_carrier` is an intermediate-time descriptive fit and may carry a free
+phase. It must not be called a strict DHO. For a normalized correlation that
+includes zero time, use `--model dho_physical --fit-min-ps 0`; it constrains
+\(C(0)=1\) and \(C'(0)=0\) through \(a=1,b=\Gamma/\omega\). Each replica is
+fit independently; the authoritative uncertainty in the ensemble table is
+replica SEM, not the nonlinear-fit covariance.
 
 ## Minimal sequence
 
@@ -77,13 +110,13 @@ explicit/implicit, or cadence-distinct data into a synthetic dispersion law.
 py scripts/collective_modes_cli.py audit `
   --case-id C88_L5_rep1 --dumps H:\path\water.dump `
   --fluid-types 3 --timestep-ps 0.0005 --wall-model explicit_fixed `
-  --axis-source box_center --rcnt-A 4.07 --output H:\out\audit
+  --axis-source box_center --r-mode-A 4.07 --output H:\out\audit
 
 # 2. Same declared profile; m=0 remains axial and m>0 adds circumference.
 py scripts/collective_modes_cli.py current `
   --case-id C88_L5 --dumps H:\path\rep1.dump H:\path\rep2.dump H:\path\rep3.dump `
   --fluid-types 3 --timestep-ps 0.0005 --wall-model explicit_fixed `
-  --axis-source box_center --rcnt-A 4.07 --n 1:20 --m 0:4 `
+  --axis-source box_center --r-mode-A 4.07 --n 1:20 --m 0:4 `
   --max-lag-ps 100 --output H:\out\current
 
 # 3. Match the same n/m grid for Fs; then construct only from measured W.
@@ -95,6 +128,10 @@ py scripts/collective_modes_cli.py construct `
   --output H:\out\construct
 ```
 
-The static weight file has exactly `n,m,weight` columns.  A missing mode or
-lag is not imputed.  The `constructibility_vs_direct_vacf.csv` residual is the
-primary diagnostic; good CJJ alone is not a demonstration of VACF closure.
+The static weight file has exactly `n,m,weight` columns. A missing mode or lag
+is not imputed. `construct` joins only identical
+`(case_id,replica,n,m,lag_ps)` rows and rejects duplicate keys. It writes
+`constructibility_sum_per_replica.csv` before calculating the replica mean/SEM
+in `constructibility_sum_ensemble_mean_sem.csv`. The matched direct-VACF
+residual is the primary diagnostic; good CJJ alone is not a demonstration of
+VACF closure.

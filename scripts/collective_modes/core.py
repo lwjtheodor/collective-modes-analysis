@@ -22,14 +22,33 @@ def coordinates(frame: Frame, unwrapped: bool = False) -> np.ndarray:
     return xyz
 
 
+def axial_positions(frame: Frame, unwrapped: bool = False) -> np.ndarray:
+    """Return z positions without requiring transverse coordinates."""
+    z = frame.column("z").astype(float).copy()
+    if unwrapped and "iz" in frame.fields:
+        z += frame.column("iz") * frame.box_lengths[2]
+    return z
+
+
 def velocities(frame: Frame) -> np.ndarray:
     return np.column_stack([frame.column(name) for name in ("vx", "vy", "vz")]).astype(float)
 
 
-def cylindrical_basis(xyz: np.ndarray, axis_xy: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def axial_velocities(frame: Frame) -> np.ndarray:
+    """Return axial velocities without requiring vx/vy."""
+    return frame.column("vz").astype(float)
+
+
+def cylindrical_basis(xyz: np.ndarray, axis_xy: np.ndarray, *, singularity_A: float = 1e-8) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     dxy = xyz[:, :2] - axis_xy[None, :]
     radius = np.hypot(dxy[:, 0], dxy[:, 1])
-    er = dxy / np.maximum(radius[:, None], 1e-12)
+    if np.any(radius < singularity_A):
+        count = int(np.count_nonzero(radius < singularity_A))
+        raise ValueError(
+            f"cylindrical basis is undefined for {count} selected particles within "
+            f"r<{singularity_A:g} A of the axis; exclude/sector the centre region explicitly"
+        )
+    er = dxy / radius[:, None]
     etheta = np.column_stack((-er[:, 1], er[:, 0]))
     theta = np.arctan2(dxy[:, 1], dxy[:, 0])
     return radius, theta, np.stack((er, etheta), axis=-1)
@@ -47,15 +66,25 @@ def velocity_in_frame(velocity: np.ndarray, mode: str, wall_velocity: np.ndarray
     raise ValueError(f"unknown velocity frame {mode!r}")
 
 
-def cylindrical_currents(xyz: np.ndarray, velocity: np.ndarray, lz_A: float, axis_xy: np.ndarray, rcnt_A: float, n_values: np.ndarray, m_values: np.ndarray) -> dict[str, np.ndarray]:
+def axial_currents(z_A: np.ndarray, vz_A_ps: np.ndarray, lz_A: float, n_values: np.ndarray) -> dict[str, np.ndarray]:
+    """Return the m=0 axial current without requiring xyz or transverse velocity."""
+    kz = 2.0 * np.pi * n_values / lz_A
+    phase = np.exp(-1j * kz[:, None] * z_A[None, :])
+    jz = np.einsum("np,p->n", phase, vz_A_ps)
+    return {"Jz": jz, "L": jz, "kz_inv_A": kz, "ktheta_inv_A": np.zeros_like(kz)}
+
+
+def cylindrical_currents(xyz: np.ndarray, velocity: np.ndarray, lz_A: float, axis_xy: np.ndarray, r_mode_A: float, n_values: np.ndarray, m_values: np.ndarray) -> dict[str, np.ndarray]:
     """Return complex currents indexed [n,m] for Jz, Jr, Jtheta, L, Tinplane, Tr."""
     _, theta, basis = cylindrical_basis(xyz, axis_xy)
     er, etheta = basis[:, :, 0], basis[:, :, 1]
     vr = np.sum(velocity[:, :2] * er, axis=1)
     vtheta = np.sum(velocity[:, :2] * etheta, axis=1)
     kz = 2.0 * np.pi * n_values / lz_A
-    ktheta = m_values / rcnt_A
-    phase = np.exp(-1j * (kz[:, None, None] * xyz[None, None, :, 2] + ktheta[None, :, None] * theta[None, None, :]))
+    ktheta = m_values / r_mode_A
+    # Fourier eigenfunctions are exp[i(kz*z + m*theta)].  m/R is a wave-vector
+    # component used only for q and the L/T projection, never for angular phase.
+    phase = np.exp(-1j * (kz[:, None, None] * xyz[None, None, :, 2] + m_values[None, :, None] * theta[None, None, :]))
     jz = np.einsum("nmp,p->nm", phase, velocity[:, 2])
     jr = np.einsum("nmp,p->nm", phase, vr)
     jtheta = np.einsum("nmp,p->nm", phase, vtheta)
