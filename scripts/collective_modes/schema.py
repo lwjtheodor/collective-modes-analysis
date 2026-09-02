@@ -48,7 +48,7 @@ class CaseProfile:
     velocity_frame_default: str = "selected_com"
     protocol_label: str = "unspecified"
     fluid_kind: str = "auto"
-    source_remote_paths: list[str] = field(default_factory=list)
+    source_locators: list[str] = field(default_factory=list)
 
     @property
     def selected_types(self) -> tuple[int, ...] | None:
