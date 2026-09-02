@@ -3,8 +3,9 @@
 ## Scope
 
 This is a **source-and-provenance repository**. It may be cloned on the
-workstation, CCFEP, Wisteria, and trusted collaborator machines to run the
-same analysis code. It does not version raw dumps or large generated results.
+workstation, trusted data-host environments, and collaborator machines to run
+the same analysis code. It does not version raw dumps or large generated
+results, and it contains no job-submission or remote-control implementation.
 
 `.gitignore` excludes trajectories, restarts, HDF5/NumPy arrays,
 assets/results/stage directories, runtime logs, and Codex state. This is a
@@ -45,8 +46,8 @@ git push -u origin main
 ```text
 private Git remote
       ├── workstation: edit, test, review, commit, push
-      ├── CCFEP: pull a reviewed commit and execute beside raw dumps
-      └── Wisteria: pull a reviewed commit and execute beside its data
+      ├── data-host environment A: pull a reviewed commit and execute near data
+      └── data-host environment B: pull the same commit and execute near data
 ```
 
 Each host retains its large data in host-local campaign/archive storage. Every
@@ -58,8 +59,8 @@ Recommended sequence:
 
 1. Workstation: implement, test, and commit a bounded change.
 2. Push the reviewed commit to `main` or `feature/<topic>`.
-3. CCFEP/Wisteria: `git pull --ff-only`, record `git rev-parse HEAD`, and run
-   against its local data using the designated Python environment.
+3. On a data-host environment: `git pull --ff-only`, record
+   `git rev-parse HEAD`, and run against its local data.
 4. Archive outputs where they belong; transfer only compact reviewed products
    when appropriate.
 5. Add/update the compact provenance manifest and push it after review.

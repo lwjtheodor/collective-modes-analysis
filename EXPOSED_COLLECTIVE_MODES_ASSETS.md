@@ -60,21 +60,17 @@ git diff --check
 git status --short
 ```
 
-## Remote execution boundary
+## Execution boundary
 
-On CCFEP use:
-
-```bash
-/lustre/home/users/ewu/.conda/envs/HB_analysis/bin/python collective_modes_cli.py <command> ...
-```
-
-The CCFEP campaign root is `/lustre/home/users/ewu/vb_gcmc/MD`.  A remote run
-must archive its exact working path, input manifest, command, environment,
-output checksums, and completion log.  A submitted job alone is not an asset.
+This package performs post-processing and scientific analysis only. It does
+not submit jobs, poll queues, open remote connections, copy files, discover
+remote paths, or encode a cluster-specific Python environment. Run it in the
+environment that is local to the data, and record the input manifest, command,
+environment, output checksums, and completion log in the result package.
 
 ## Sharing boundary
 
 This repository owns reusable source, tests, and small governance metadata.
 Raw trajectories, LAMMPS restarts, HDF5/NumPy arrays, and bulk results remain
 in host-local/archive storage and are excluded by `.gitignore`.  See
-`governance/GIT_PUBLISHING_AND_CROSS_HOST.md` before creating a remote.
+`governance/GIT_PUBLISHING_AND_CROSS_HOST.md` before creating a Git remote.

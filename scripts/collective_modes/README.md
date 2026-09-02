@@ -6,18 +6,9 @@ The entry point is:
 py scripts/collective_modes_cli.py <command> ...
 ```
 
-On CCFEP, upload only `scripts/collective_modes/` and
-`scripts/collective_modes_cli.py` into the analysis result/stage directory,
-then invoke it with:
-
-```bash
-/lustre/home/users/ewu/.conda/envs/HB_analysis/bin/python collective_modes_cli.py <command> ...
-```
-
 Every command writes readable CSV plus `metadata.json`.  Its metadata must be
-copied into the authority package under
-`results/collective_mode_response/<topic>/<date>/`; completion still requires
-the result-package README, source provenance and QA gates in `AGENT.md`.
+copied into the authority result package. Completion still requires the
+result-package README, source provenance, and QA gates in `AGENT.md`.
 
 ## Required declaration and automatic detection
 

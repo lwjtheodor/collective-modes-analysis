@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stable local/CCFEP entry point: ``python collective_modes_cli.py <command>``."""
+"""Stable post-processing entry point: ``python collective_modes_cli.py <command>``."""
 
 from collective_modes.cli import main
 
