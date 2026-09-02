@@ -273,6 +273,31 @@ def audit(args) -> None:
         "important_limit": "dump-content inference detects fields/capabilities only. A water-only dump cannot prove explicit versus implicit CNT; declare wall_model in profile."})
 
 
+def radial_qa(args) -> None:
+    """Quantify whether selected O/Ar positions support a thin-shell projection."""
+    profile = _profile(args)
+    rows: list[dict] = []
+    all_radius: list[np.ndarray] = []
+    for replica_spec in profile.replica_segments:
+        axis = None; chunks: list[np.ndarray] = []
+        for frame in _iter_frames_segments(replica_spec, profile.selected_types, args.max_frames):
+            if axis is None: axis = _axis(frame, args, profile)
+            chunks.append(cylindrical_basis(coordinates(frame), axis)[0])
+        if not chunks: raise ValueError(f"{replica_spec.replica_id}: no selected frames")
+        radius = np.concatenate(chunks); all_radius.append(radius)
+        rows.append(_radial_summary(profile.case_id, replica_spec.replica_id, radius, args.thin_shell_cv_max))
+    combined = np.concatenate(all_radius)
+    rows.append(_radial_summary(profile.case_id, "ensemble_pooled_particles", combined, args.thin_shell_cv_max))
+    write_csv(args.output / "radial_mode_thin_shell_qa.csv", rows, list(rows[0]))
+    write_metadata(args.output, {"case_id": profile.case_id, "definition": "R_mode=<r_selected> over selected O/Ar particles and frames", "thin_shell_rule": "pass iff radial_cv=sigma_r/R_mode <= thin_shell_cv_max; this is an operational projection QA, not proof of a radial eigenmode", "thin_shell_cv_max": args.thin_shell_cv_max, "profile": profile.__dict__})
+
+
+def _radial_summary(case_id: str, replica: str, radius: np.ndarray, cv_max: float) -> dict:
+    mean_r = float(np.mean(radius)); std_r = float(np.std(radius, ddof=1))
+    p05, p25, p50, p75, p95 = np.quantile(radius, [0.05, .25, .5, .75, .95])
+    return {"case_id": case_id, "replica": replica, "n_selected_samples": len(radius), "R_mode_A": mean_r, "radial_std_A": std_r, "radial_cv": std_r / mean_r, "r_p05_A": float(p05), "r_p25_A": float(p25), "r_p50_A": float(p50), "r_p75_A": float(p75), "r_p95_A": float(p95), "central_90_width_A": float(p95-p05), "thin_shell_cv_max": cv_max, "thin_shell_pass": bool(std_r / mean_r <= cv_max)}
+
+
 def isf(args) -> None:
     profile = _profile(args)
     n_values, m_values = _numbers(args.n), _numbers(args.m)

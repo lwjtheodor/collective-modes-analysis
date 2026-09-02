@@ -26,6 +26,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="collective-modes", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
     p = sub.add_parser("audit", help="detect dump fields/capabilities without inferring wall physics"); _case_arguments(p); p.set_defaults(func=commands.audit)
+    p = sub.add_parser("radial-qa", help="selected-fluid radial width and thin-shell projection QA"); _case_arguments(p, cylindrical=True); p.add_argument("--thin-shell-cv-max", type=float, default=0.10); p.set_defaults(func=commands.radial_qa)
     p = sub.add_parser("isf", help="total/self/distinct cylindrical density ISF"); _case_arguments(p, cylindrical=True); p.add_argument("--n", default="1:5"); p.add_argument("--m", default="0"); p.add_argument("--max-lag-ps", type=float, required=True); p.set_defaults(func=commands.isf)
     p = sub.add_parser("current", help="cylindrical current ACF, ordered cross kernels and spectra"); _case_arguments(p, cylindrical=True); p.add_argument("--n", default="1:5"); p.add_argument("--m", default="0"); p.add_argument("--max-lag-ps", type=float, required=True); p.set_defaults(func=commands.current)
     p = sub.add_parser("vacf", help="VACF, consistent VACF-MSD and alpha"); _case_arguments(p, cylindrical=True); p.add_argument("--component", choices=["z", "r", "theta"], default="z"); p.add_argument("--max-lag-ps", type=float, required=True); p.set_defaults(func=commands.vacf)
