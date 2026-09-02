@@ -1,0 +1,51 @@
+# Codex/session state
+.codex/
+
+# Raw trajectories and simulation-state files: preserve in source/archive storage,
+# index them through governance manifests, never version them in this repository.
+*.dump
+*.lammpstrj
+*.dcd
+*.xtc
+*.trr
+*.xyz
+*.restart
+*.bin
+*.npz
+*.h5
+*.hdf5
+*.npy
+
+# Generated or fetched scientific assets.  The governance inventory records their
+# paths, byte counts, provenance and qualification state; Git owns source and
+# small governance metadata rather than tens of GiB of derived/raw data.
+/assets/
+/data/
+/results/
+/remote_fetch/
+/heartbeat_fetch/
+/exploratory_*/
+/full_*/
+/highfreq/
+/high_protocol_1ps/
+/lowfreq/
+/staging/
+/stage_*/
+stage_*.sh
+
+# PBS/LAMMPS runtime products
+*.o[0-9]*
+*.e[0-9]*
+log.lammps
+screen.*
+SUCCESS.txt
+output/
+__pycache__/
+*.py[cod]
+
+# Locally generated inventory runs are immutable evidence snapshots.  The first
+# baseline is intentionally tracked; subsequent scans are kept local until their
+# diff has been reviewed.
+/governance/inventory/*/
+!/governance/inventory/2026-09-02/
+!/governance/inventory/2026-09-02/**

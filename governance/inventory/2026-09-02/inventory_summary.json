@@ -1,0 +1,439 @@
+{
+  "schema_version": 1,
+  "generated_utc": "2026-09-02T05:28:20.271970+00:00",
+  "root": "H:\\gcmc_explore\\translational_anomaly\\02_isf_collective_modes",
+  "hash_limit_mib": 16.0,
+  "file_count": 11521,
+  "script_count": 1579,
+  "exact_script_duplicate_clusters": 210,
+  "same_basename_script_clusters": 172,
+  "unique_ccfep_paths_referenced": 110,
+  "top_level": {
+    ".gitignore": {
+      "files": 1,
+      "bytes": 1057
+    },
+    "AGENT.md": {
+      "files": 1,
+      "bytes": 5604
+    },
+    "EXPLICIT_CNT_CURRENT_VACF_WORKFLOW_FOR_IMPLICIT_COMPARISON.md": {
+      "files": 1,
+      "bytes": 23422
+    },
+    "IMPLICIT_CNT_DISCRETE_MODAL_VACF_RECONSTRUCTION_METHOD.md": {
+      "files": 1,
+      "bytes": 6035
+    },
+    "README.md": {
+      "files": 1,
+      "bytes": 9514
+    },
+    "analysis_asset_audit_2026-08-20.md": {
+      "files": 1,
+      "bytes": 28441
+    },
+    "analyze_transverse_cjj_kmin_200ps.py": {
+      "files": 1,
+      "bytes": 5153
+    },
+    "assets": {
+      "files": 2510,
+      "bytes": 7873971664
+    },
+    "assets.md": {
+      "files": 1,
+      "bytes": 97174
+    },
+    "data": {
+      "files": 1,
+      "bytes": 328
+    },
+    "exploratory_kz_transverse_localtest_20260809": {
+      "files": 19,
+      "bytes": 3698003358
+    },
+    "full_kz_transverse_4chirality_20260809": {
+      "files": 17,
+      "bytes": 60092744
+    },
+    "full_static_longitudinal_4chirality_20260810": {
+      "files": 25,
+      "bytes": 58991583
+    },
+    "governance": {
+      "files": 2,
+      "bytes": 6293
+    },
+    "heartbeat_fetch": {
+      "files": 297,
+      "bytes": 100078230
+    },
+    "high_protocol_1ps": {
+      "files": 30,
+      "bytes": 203113
+    },
+    "highfreq": {
+      "files": 30,
+      "bytes": 20376345
+    },
+    "lowfreq": {
+      "files": 30,
+      "bytes": 165507
+    },
+    "remote_fetch": {
+      "files": 1308,
+      "bytes": 2051970621
+    },
+    "results": {
+      "files": 6632,
+      "bytes": 58024586796
+    },
+    "run_analyze_transverse_cjj_kmin_200ps.remote.sh": {
+      "files": 1,
+      "bytes": 495
+    },
+    "scripts": {
+      "files": 107,
+      "bytes": 644740
+    },
+    "stage_10L_alpha_cvj_crosschirality_20260808": {
+      "files": 5,
+      "bytes": 9616
+    },
+    "stage_10L_decom_msd_stability_20260809": {
+      "files": 2,
+      "bytes": 3292
+    },
+    "stage_10L_stationarity": {
+      "files": 2,
+      "bytes": 2283
+    },
+    "stage_C99_earlytime_highk_measured_kernel_20260830": {
+      "files": 5,
+      "bytes": 13812
+    },
+    "stage_C99_multirate_LT_io_pilot_N3200_20260829": {
+      "files": 5,
+      "bytes": 9420
+    },
+    "stage_C99_multirate_LT_production_wave1_N800_N1600_20260829": {
+      "files": 6,
+      "bytes": 9672
+    },
+    "stage_C99_multirate_LT_production_wave1_N800_N1600_rerun_20260830": {
+      "files": 10,
+      "bytes": 16331
+    },
+    "stage_C99_multirate_cross_current_N800_20260831": {
+      "files": 3,
+      "bytes": 9666
+    },
+    "stage_C99_multirate_current_modes_wave1_20260830": {
+      "files": 4,
+      "bytes": 3793
+    },
+    "stage_C99_static_W_lowk_1ps_20ns_20260830": {
+      "files": 2,
+      "bytes": 1967
+    },
+    "stage_C99_static_vertex_lowk_block_audit_20260829": {
+      "files": 2,
+      "bytes": 3802
+    },
+    "stage_C99_unified_longitudinal_current_VACF_500ps_20260829": {
+      "files": 4,
+      "bytes": 11919
+    },
+    "stage_L20_axial_m0_mode_vertex_100fs_10ns_4rep_20260828": {
+      "files": 6,
+      "bytes": 15492
+    },
+    "stage_L20_fixed10ns_vacf_msd_alpha_20260828": {
+      "files": 4,
+      "bytes": 3433
+    },
+    "stage_L20_preliminary_vacf_msd_alpha_20260828": {
+      "files": 5,
+      "bytes": 11610
+    },
+    "stage_TAtheta_8_8_L10_3rep_fullvelocity_10ns_100fs_tdamp1ns_20260826": {
+      "files": 8,
+      "bytes": 10392
+    },
+    "stage_Wk_crossfit_88_L2to10_20260812": {
+      "files": 2,
+      "bytes": 3898
+    },
+    "stage_Wk_crossfit_88_L2to10_20260812_corrected2": {
+      "files": 2,
+      "bytes": 5340
+    },
+    "stage_absolute_cvj_1L10L_20260809": {
+      "files": 5,
+      "bytes": 7673
+    },
+    "stage_alpha200ps_crosschirality_20260809": {
+      "files": 4,
+      "bytes": 4516
+    },
+    "stage_analyze_10L_CJJ_dispersion_n1n6_20260827.sh": {
+      "files": 1,
+      "bytes": 1798
+    },
+    "stage_analyze_10L_tdamp1ns_LA_n3n8_20260824.sh": {
+      "files": 1,
+      "bytes": 1322
+    },
+    "stage_analyze_implicitC88_LA_Gamma0_20260824.sh": {
+      "files": 1,
+      "bytes": 674
+    },
+    "stage_analyze_implicitC88_Pz_ACF_20260824.sh": {
+      "files": 1,
+      "bytes": 820
+    },
+    "stage_analyze_implicitC88_transverse_20260824.sh": {
+      "files": 1,
+      "bytes": 657
+    },
+    "stage_analyze_k0_10L_tdamp1ns_20260824.sh": {
+      "files": 1,
+      "bytes": 1292
+    },
+    "stage_cadence_1ps_decom_t_over_L_20260810": {
+      "files": 5,
+      "bytes": 7962
+    },
+    "stage_cjj_dispersion_crosschirality_10L_20260814": {
+      "files": 31,
+      "bytes": 83903453
+    },
+    "stage_cjj_n1_block_audit_88_20260812": {
+      "files": 2,
+      "bytes": 4660
+    },
+    "stage_cjj_raw_vs_peculiar_88_20260812": {
+      "files": 2,
+      "bytes": 4868
+    },
+    "stage_coherent_spectrum_88_L2to10_20260812": {
+      "files": 1,
+      "bytes": 1073
+    },
+    "stage_crosschirality_10L_decom_msd_stability_20260810": {
+      "files": 4,
+      "bytes": 2585
+    },
+    "stage_crosschirality_C075_long_assets_20260810": {
+      "files": 4,
+      "bytes": 3021
+    },
+    "stage_crosschirality_vacf_alpha_2L10_weaknh_20260814": {
+      "files": 6,
+      "bytes": 16953
+    },
+    "stage_flexible_fixed_4L_20260809": {
+      "files": 13,
+      "bytes": 46798
+    },
+    "stage_full_kz_transverse_4chirality_20260809": {
+      "files": 4,
+      "bytes": 2312
+    },
+    "stage_implicit_C88_N1600_CJJ43_lowk_transverse_longlag_20260901": {
+      "files": 7,
+      "bytes": 9793
+    },
+    "stage_implicit_C88_N1600_LT_dualcadence_20260831": {
+      "files": 9,
+      "bytes": 10664
+    },
+    "stage_implicit_C88_N1600_LT_dualcadence_analysis_20260901": {
+      "files": 10,
+      "bytes": 26856
+    },
+    "stage_implicit_C88_N1600_helical_LT_CJJ43_20260901": {
+      "files": 5,
+      "bytes": 5029
+    },
+    "stage_implicit_C88_N1600_multirate_VACF_alpha_20260901": {
+      "files": 6,
+      "bytes": 12059
+    },
+    "stage_implicit_C88_N1600_multirate_VACF_reconcile_20260901": {
+      "files": 1,
+      "bytes": 7149
+    },
+    "stage_implicit_C88_N1600_self_distinct_20260901": {
+      "files": 6,
+      "bytes": 9672
+    },
+    "stage_implicit_C88_N1600_self_distinct_aggregate_20260901": {
+      "files": 1,
+      "bytes": 5308
+    },
+    "stage_implicit_C88_N3200_weakNH_6ns_100fs_4rep_20260901": {
+      "files": 17,
+      "bytes": 105108
+    },
+    "stage_implicit_C88_N800_reverse_vertex_20260901": {
+      "files": 3,
+      "bytes": 2435
+    },
+    "stage_implicit_C88_static_vertex_VACF_20260831": {
+      "files": 3,
+      "bytes": 13824
+    },
+    "stage_lowfreq_alphaz_loglog_8_8_20260806": {
+      "files": 1,
+      "bytes": 916
+    },
+    "stage_lowfreq_cvj_crosschirality_20260806": {
+      "files": 2,
+      "bytes": 4384
+    },
+    "stage_lowfreq_decom_alpha_collapse_20260809": {
+      "files": 3,
+      "bytes": 5802
+    },
+    "stage_lowfreq_decom_alpha_stability_20260809": {
+      "files": 2,
+      "bytes": 3101
+    },
+    "stage_lowfreq_vacf_crosschirality_20260806": {
+      "files": 1,
+      "bytes": 835
+    },
+    "stage_nve_drift_8_8_L2L4_1ns_20260821": {
+      "files": 4,
+      "bytes": 3213
+    },
+    "stage_nve_drift_8_8_L2L4_1ns_20260821_v2": {
+      "files": 4,
+      "bytes": 3450
+    },
+    "stage_nve_explicit_implicit_20260824.sh": {
+      "files": 1,
+      "bytes": 8534
+    },
+    "stage_nve_temperature_gate_88_L5_4seed_strongNH10fs_toNVE5ns_20260828": {
+      "files": 4,
+      "bytes": 5348
+    },
+    "stage_refit_implicitC88_Pz_ACF_fast_20260824.sh": {
+      "files": 1,
+      "bytes": 666
+    },
+    "stage_retry_implicitC88_NVE_from_finaldata_20260825.sh": {
+      "files": 1,
+      "bytes": 4017
+    },
+    "stage_static_longitudinal_4chirality_20260809": {
+      "files": 8,
+      "bytes": 122680
+    },
+    "stage_theta_decom_88_L2L10_100fs_10ns_20260826": {
+      "files": 62,
+      "bytes": 294570
+    },
+    "stage_theta_derot_88_L2L5_100fs_10ns_20260827": {
+      "files": 5,
+      "bytes": 14234
+    },
+    "stage_transverse_cjj_kmin_5L_200ps.remote.sh": {
+      "files": 1,
+      "bytes": 2349
+    },
+    "stage_transverse_cjj_kmin_5L_extend800ps.remote.sh": {
+      "files": 1,
+      "bytes": 2418
+    },
+    "stage_vacf_10L_odd_even_matchedgrid_20260812": {
+      "files": 2,
+      "bytes": 4958
+    },
+    "stage_vacf_10L_tail_8_8_20260812": {
+      "files": 2,
+      "bytes": 3165
+    },
+    "stage_vacf_88_2L5L_500ps_20260812": {
+      "files": 2,
+      "bytes": 3042
+    },
+    "stage_vacf_coherent_10L_20260812": {
+      "files": 2,
+      "bytes": 4411
+    },
+    "stage_vacf_coherent_10L_n1to4_20260812": {
+      "files": 2,
+      "bytes": 4296
+    },
+    "stage_vacf_integral_lockin_20260806": {
+      "files": 1,
+      "bytes": 744
+    },
+    "stage_vacf_tail_8_8_20260806": {
+      "files": 3,
+      "bytes": 2536
+    },
+    "stage_vacf_tail_8_8_2L_8rep_weaknh_20260812": {
+      "files": 16,
+      "bytes": 14674
+    },
+    "stage_vacf_tail_8_8_L10_8rep_continue10ns_100fs_20260823": {
+      "files": 17,
+      "bytes": 19314160
+    },
+    "stage_vacf_tail_8_8_L10_8rep_continue10ns_100fs_tdamp1ns_20260823": {
+      "files": 11,
+      "bytes": 9723
+    },
+    "stage_vacf_tail_8_8_L10_8rep_weaknh_nomom_1ns_10fs_20260819": {
+      "files": 6,
+      "bytes": 10685
+    },
+    "stage_vacf_tail_8_8_L20_4rep_NVE_nomom_5ns_10fs_20260828": {
+      "files": 7,
+      "bytes": 7905
+    },
+    "stage_vacf_tail_8_8_L20_4rep_veryweaknh_nomom_20ns_100fs_20260826": {
+      "files": 8,
+      "bytes": 9693
+    },
+    "stage_vacf_tail_8_8_L2L10_8rep_weaknh_zvz_20260812": {
+      "files": 22,
+      "bytes": 44226
+    },
+    "stage_vacf_tail_8_8_L2L5_4rep_weaknh_nomom_10ns_100fs_20260821": {
+      "files": 25,
+      "bytes": 10165788
+    },
+    "stage_vacf_tail_8_8_L2L5_extra5rep_weaknh_nomom_1ns_10fs_20260820": {
+      "files": 16,
+      "bytes": 10150839
+    },
+    "stage_vacf_tail_8_8_L2L5_extra5rep_weaknh_nomom_1ns_10fs_20260820_v2": {
+      "files": 16,
+      "bytes": 10151069
+    },
+    "stage_vacf_tail_crosschirality_1L8L_weaknh_20260814_prepare": {
+      "files": 6,
+      "bytes": 4959
+    },
+    "staging": {
+      "files": 7,
+      "bytes": 7374
+    }
+  },
+  "roles": {
+    "analysis_archive_or_derived_asset": 6613,
+    "canonical_candidate_script": 107,
+    "display_asset": 2510,
+    "fetched_execution_snapshot": 1605,
+    "project_support_or_other": 67,
+    "raw_trajectory_or_restart": 67,
+    "stage_or_exploratory_snapshot": 550,
+    "unclassified_script": 2
+  }
+}
