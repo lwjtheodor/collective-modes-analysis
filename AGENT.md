@@ -4,11 +4,11 @@
 
 ## 代码与资产治理（2026-09-02 起）
 
-- 本项目的 Git 仓库只追踪治理文件、根目录方法/资产入口和 `scripts/` 中的可复用后处理/科学分析源代码候选；基线中的 `scripts/` 文件在通过审阅/回归前均不可称为 canonical。它不追踪 dump、restart、运行输出、`results/`、`assets/`、`remote_fetch/` 或 `stage_*` 的大规模运行产物，也不保留超算投送、监控、SSH/SCP 或远端探测实现。Git 提交是**代码历史**，不替代分析完成或科学资格。
+- 本项目的 Git 仓库只追踪治理文件、根目录方法/资产入口和 `scripts/` 中经验证的可复用后处理/科学分析代码。除 `scripts/collective_modes_cli.py`、`scripts/collective_modes/` 与必要的维护工具外，不保留任何按手性、盒长、采样率、单一任务或图命名的一过性脚本。它不追踪 dump、restart、运行输出、`results/`、`assets/`、`remote_fetch/` 或 `stage_*` 的大规模运行产物，也不保留超算投送、监控、SSH/SCP 或远端探测实现。Git 提交是**代码历史**，不替代分析完成或科学资格。
 - `stage_*`、`remote_fetch/`、`heartbeat_fetch/` 为不可变执行快照；它们可以提供 provenance，却不能因同名或被复制到结果包而自动成为 canonical script。脚本升级必须先通过 `governance/inventory/<日期>/` 的 hash/同名变体审计，再在 `scripts/` 中明确确定主线实现。
 - 主线的物理边界固定为：`LONG-ISF`（`F/Fs/Fd`）、`LONG-CJJ`（去 instantaneous O axial COM 的 axial current）、`CYL-LT`（`q=(kz,m/Rcnt)`，保留 `Jr`、`Jtheta`、`CLT`、`CTL` 分支）、`SELF-VACF`（peculiar VACF 与一致积分 MSD/alpha）、`STATIC-VERTEX` 和 `QA-PROVENANCE`。具体定义、迁移顺序与禁混规则见 `governance/MAINLINE.md`。
 - 新的权威结果包除原有 README/manifest/QA 外，必须记录 canonical script 相对路径、Git commit、输入 asset ID/远端绝对路径和输出 schema；历史复制脚本保留在该包内作复现快照，但应注明 `historical`、`superseded` 或 `exploratory` 状态。
-- 自 2026-09-02 起，新的 raw-dump 分析主线入口为 `scripts/collective_modes_cli.py` 与 `scripts/collective_modes/`。它先执行 field/cadence/protocol capability gate，再输出可读 CSV 与 metadata：`audit`、`isf`、`current`、`vacf`、`fit-current`、`construct`、`plot`。旧脚本和结果包内 scripts 只作 provenance，除非审查后明确升级。
+- 自 2026-09-02 起，新的 raw-dump 分析主线入口为 `scripts/collective_modes_cli.py` 与 `scripts/collective_modes/`。它先执行 field/cadence/protocol capability gate，再输出可读 CSV 与 metadata：`audit`、`isf`、`current`、`vacf`、`fit-current`、`construct`、`plot`。旧脚本只保存在仓库外历史归档和 Git 初始快照中，绝不在当前 `scripts/` 树中恢复；只有先补足主线能力、通过真实 dump 回归并有明确 generic API 的实现，才能作为新模块加入。
 - `current` 以圆柱基 `(n,m)` 构造并**分别**输出 `Jz,Jr,Jtheta,L,Tinplane,Tr`、时域 CJJ、频域 periodogram 和 ordered `C_AB(tau)=Re<delta J_A(t+tau)delta J_B(t)^*>`；`C_LT` 与 `C_TL` 绝不以对称性互换。`isf` 同时输出 `F_total,F_self,F_distinct`。`construct` 只接受外部 measured `W(n,m)`，无自由总幅度地写 `sum W Fs Phi_J`，有 direct VACF 时必须输出残差表。
 - 自动协议识别只能确认 dump 的字段能力；water-only dump 无法可靠判定 implicit/explicit CNT，必须在 profile 明确 wall model。implicit case 的 `Rcnt` 必须来自 CNT field/protocol metadata；flexible explicit CNT 的 wall-relative frame 必须有 CNT atom position/velocity，禁止退回 box centre 猜测。
 

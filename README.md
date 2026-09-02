@@ -54,12 +54,20 @@ The dedicated resubmission uses a dual-rate oxygen-only output: 100 fs over
 the full 2.5-ns production for 400-ps tail statistics, plus a concurrent
 1-ns/10-fs stationary burst for high-resolution VACF and axial velocity DOS.
 
-## Scripts
+## Canonical scripts
 
-- `H:/gcmc_explore/scripts/summarize_isf_2L_3L_demo.py` and `plot_isf_2L_3L_demo.py` — initial total/self/distinct matched-k demonstration.
-- `H:/gcmc_explore/scripts/analyze_fs_wavevector_scan.py` — wavevector scan of self relaxation.
-- `H:/gcmc_explore/scripts/analyze_kmode_scaling_1L_2L.py` and `plot_kmode_mechanism_focus.py` — same-k comparison and mechanism panels.
-- `H:/gcmc_explore/scripts/analyze_rh75_mode_discriminator.py` – mode-discrimination utilities.
+The only supported scientific-analysis entry point is
+`scripts/collective_modes_cli.py`, backed by the reusable package in
+`scripts/collective_modes/`.  It covers dump auditing, axial/cylindrical
+ISF, L/T/Tr current modes, VACF--MSD--alpha, mode fitting, constructibility,
+and CSV-first plotting across case, chirality, box length, and declared
+protocol parameters.
+
+The former case-specific `analyze_*`, `aggregate_*`, `compare_*`,
+`rebuild_*`, and `plot_*` scripts are intentionally not part of this
+repository's current tree. They are historical provenance only; see
+`governance/LEGACY_SCRIPT_ARCHIVE.md` and Git commit `9e06eae` if a past result
+requires forensic reconstruction.
 
 ## Definitions and why this branch is the infrared test
 
@@ -129,7 +137,7 @@ vector files and reproducible script are:
 - `assets/library/cjj/cjj_88_10L_raw_source_area_lambda_linearity_audit_nature.png`
 - `assets/library/cjj/cjj_88_10L_raw_source_area_lambda_linearity_audit_nature.pdf`
 - `assets/library/cjj/cjj_88_10L_raw_source_area_lambda_linearity_audit_nature.svg`
-- `scripts/audit_10L_area_linear_vs_lambda.py`
+- the historical generator recorded in `governance/LEGACY_SCRIPT_ARCHIVE.md`
 
 The 5L-versus-10L matched-physical-\(k\) all-mode check remains available in
 `assets/library/cjj/cjj_88_5L_10L_matched_k_first_lobe_ratios.csv`.  It should be used
