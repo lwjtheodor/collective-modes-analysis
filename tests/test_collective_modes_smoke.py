@@ -27,9 +27,9 @@ def synthetic_dump(path: Path) -> None:
     path.write_text("".join(lines), encoding="utf-8")
 
 
-def axial_dump(path: Path) -> None:
+def axial_dump(path: Path, steps=range(0, 80, 10)) -> None:
     lines: list[str] = []
-    for step in range(0, 80, 10):
+    for step in steps:
         lines += ["ITEM: TIMESTEP\n", f"{step}\n", "ITEM: NUMBER OF ATOMS\n", "2\n", "ITEM: BOX BOUNDS pp pp pp\n", "0 10\n", "0 10\n", "0 20\n", "ITEM: ATOMS id type z vz\n", f"1 1 {1+step/100:.6f} 0.20\n", f"2 1 {7-step/100:.6f} -0.20\n"]
     path.write_text("".join(lines), encoding="utf-8")
 
@@ -74,9 +74,11 @@ class CanonicalCommandsSmokeTest(unittest.TestCase):
 
     def test_ordered_segments_deduplicate_restart_boundary(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
-            temp_path = Path(temp); dump = temp_path / "segment.dump"; axial_dump(dump)
+            temp_path = Path(temp)
+            first = temp_path / "segment_001.dump"; axial_dump(first, range(0, 50, 10))
+            second = temp_path / "segment_002.dump"; axial_dump(second, range(40, 80, 10))
             output = temp_path / "current"
-            self.run_cli("current", "--case-id", "joined", "--replica", f"rep1={dump},{dump}", "--fluid-types", "1", "--timestep-ps", "0.001", "--output", str(output), "--n", "1", "--m", "0", "--max-lag-ps", "0.06")
+            self.run_cli("current", "--case-id", "joined", "--replica", f"rep1={first},{second}", "--fluid-types", "1", "--timestep-ps", "0.001", "--output", str(output), "--n", "1", "--m", "0", "--max-lag-ps", "0.06")
             with (output / "current_per_replica.csv").open() as handle:
                 row0 = next(csv.DictReader(handle))
             self.assertEqual(row0["replica"], "rep1")

@@ -110,20 +110,22 @@ def _frames(path: Path, selected_types: tuple[int, ...] | None, max_frames: int)
     return result
 
 
-def _frames_segments(replica: ReplicaSegments, selected_types: tuple[int, ...] | None, max_frames: int) -> list[Frame]:
-    """Read ordered segments with strict protocol gates and restart-boundary de-duplication."""
-    result: list[Frame] = []
+def _iter_frames_segments(replica: ReplicaSegments, selected_types: tuple[int, ...] | None, max_frames: int):
+    """Yield ordered selected frames with protocol gates, retaining no raw trajectory."""
     reference_fields: tuple[str, ...] | None = None
     reference_ids: np.ndarray | None = None
     reference_box: np.ndarray | None = None
     last_step: int | None = None
+    emitted = 0
     for path in replica.segments:
-        segment = _frames(path, selected_types, 0)
-        if reference_fields is None:
-            reference_fields = segment[0].fields
-            reference_ids = segment[0].column("id").astype(np.int64) if "id" in segment[0].fields else None
-            reference_box = segment[0].bounds
-        for frame in segment:
+        for raw in iter_frames(path):
+            frame = stable_order(raw.select_types(selected_types))
+            if not len(frame.values):
+                raise ValueError(f"{path}: selected fluid set is empty")
+            if reference_fields is None:
+                reference_fields = frame.fields
+                reference_ids = frame.column("id").astype(np.int64) if "id" in frame.fields else None
+                reference_box = frame.bounds
             if frame.fields != reference_fields:
                 raise ValueError(f"replica {replica.replica_id}: field protocol changes at {path}: {frame.fields} != {reference_fields}")
             if reference_ids is not None and not np.array_equal(frame.column("id").astype(np.int64), reference_ids):
@@ -134,11 +136,16 @@ def _frames_segments(replica: ReplicaSegments, selected_types: tuple[int, ...] |
                 raise ValueError(f"replica {replica.replica_id}: segment order is nonmonotonic at {path} step {frame.timestep}")
             if last_step is not None and frame.timestep == last_step:
                 continue
-            result.append(frame); last_step = frame.timestep
-            if max_frames and len(result) >= max_frames:
-                break
-        if max_frames and len(result) >= max_frames:
-            break
+            last_step = frame.timestep
+            emitted += 1
+            yield frame
+            if max_frames and emitted >= max_frames:
+                return
+
+
+def _frames_segments(replica: ReplicaSegments, selected_types: tuple[int, ...] | None, max_frames: int) -> list[Frame]:
+    """Compatibility materializer for analyses not yet converted to memmap storage."""
+    result = list(_iter_frames_segments(replica, selected_types, max_frames))
     if len(result) < 3:
         raise ValueError(f"replica {replica.replica_id}: need at least three selected frames after segment joining")
     return result
@@ -171,15 +178,32 @@ def _ensemble_fluid_r_mode(profile: CaseProfile, args) -> float:
     """Mode radius is the selected O/Ar ensemble mean radius, never CNT radius."""
     radius_sum = 0.0; count = 0
     for replica in profile.replica_segments:
-        frames = _frames_segments(replica, profile.selected_types, args.max_frames)
-        axis = _axis(frames[0], args, profile)
-        for frame in frames:
+        axis = None
+        for frame in _iter_frames_segments(replica, profile.selected_types, args.max_frames):
+            if axis is None:
+                axis = _axis(frame, args, profile)
             xyz = coordinates(frame)
             radius, _, _ = cylindrical_basis(xyz, axis)
             radius_sum += float(radius.sum()); count += len(radius)
     if count == 0:
         raise ValueError("cannot determine fluid ensemble radial mode radius from an empty selection")
     return radius_sum / count
+
+
+def _cadence_steps(steps: list[int], profile: CaseProfile, declared_dt: float | None) -> float:
+    if len(steps) < 3:
+        raise ValueError("need at least three selected frames")
+    deltas = np.diff(np.asarray(steps, dtype=np.int64))
+    if not np.all(deltas == deltas[0]):
+        raise ValueError(f"nonuniform dump-step cadence: {deltas[:8].tolist()}")
+    inferred = int(deltas[0]) * profile.integration_timestep_ps if profile.integration_timestep_ps is not None else None
+    if inferred is not None:
+        if declared_dt is not None and not np.isclose(declared_dt, inferred):
+            raise ValueError(f"declared dt {declared_dt} ps conflicts with dump cadence {inferred} ps ({int(deltas[0])} steps)")
+        return float(inferred)
+    if declared_dt is None:
+        raise ValueError("declare --timestep-ps for cadence verification, or --dt-ps when only frame intervals are known")
+    return float(declared_dt)
 
 
 def _aggregate(rows: list[dict], keys: list[str], value_fields: list[str], replica_key: str = "replica") -> list[dict]:
@@ -298,16 +322,20 @@ def current(args) -> None:
     per_rows: list[dict] = []; cross_rows: list[dict] = []; spectrum_rows: list[dict] = []
     for replica_spec in profile.replica_segments:
         replica = replica_spec.replica_id; source = replica_spec.segments[0]
-        frames = _frames_segments(replica_spec, profile.selected_types, args.max_frames)
-        profile.require("cylindrical_current" if cylindrical else "axial_current", frames[0].fields)
-        dt = _cadence(frames, profile, args.dt_ps)
-        case_protocol = _assert_case_protocol(case_protocol, frames, dt, replica)
-        axis = _axis(frames[0], args, profile) if cylindrical else None
-        lz = frames[0].box_lengths[2]
+        # Current kernels need only one complex value per (time, channel, n, m),
+        # so process each dump frame once and never retain its atom table.
+        steps: list[int] = []; first_frame: Frame | None = None
+        axis = None; lz = None; n_particles = None
         r_mode = r_mode_case
         channels = ("Jz", "Jr", "Jtheta", "L", "Tinplane", "Tr") if cylindrical else ("Jz", "L")
         series: dict[str, list[np.ndarray]] = defaultdict(list)
-        for frame in frames:
+        for frame in _iter_frames_segments(replica_spec, profile.selected_types, args.max_frames):
+            if first_frame is None:
+                first_frame = frame
+                profile.require("cylindrical_current" if cylindrical else "axial_current", frame.fields)
+                axis = _axis(frame, args, profile) if cylindrical else None
+                lz = frame.box_lengths[2]
+                n_particles = len(frame.values)
             if cylindrical:
                 xyz = coordinates(frame)
                 velocity = velocity_in_frame(velocities(frame), args.velocity_frame)
@@ -321,9 +349,13 @@ def current(args) -> None:
                 currents = axial_currents(axial_positions(frame), vz, frame.box_lengths[2], n_values)
             for channel in channels:
                 series[channel].append(currents[channel].reshape(-1))
+            steps.append(frame.timestep)
+        if first_frame is None:
+            raise ValueError(f"replica {replica}: no selected frames")
+        dt = _cadence_steps(steps, profile, args.dt_ps)
+        case_protocol = _assert_case_protocol(case_protocol, [first_frame], dt, replica)
         flattened = {key: np.asarray(value) for key, value in series.items()}
-        max_lag = min(int(round(args.max_lag_ps / dt)), len(frames) - 1)
-        n_particles = len(frames[0].values)
+        max_lag = min(int(round(args.max_lag_ps / dt)), len(steps) - 1)
         for channel, values in flattened.items():
             acf = complex_acf(values, max_lag).real
             c0 = acf[0]
@@ -334,7 +366,7 @@ def current(args) -> None:
                         "lag_ps": lag*dt, "n_particles": n_particles,
                         "CJJ_extensive": float(value), "CJJ_per_particle": float(value / n_particles),
                         "CJJ_normalized": float(value/c0[index]) if c0[index] != 0 else float("nan"),
-                        "CJJ0_extensive": float(c0[index]), "CJJ0_per_particle": float(c0[index] / n_particles), "n_time_origins": len(frames)-lag})
+                        "CJJ0_extensive": float(c0[index]), "CJJ0_per_particle": float(c0[index] / n_particles), "n_time_origins": len(steps)-lag})
             centred = values - values.mean(axis=0, keepdims=True)
             frequency = np.fft.fftfreq(len(values), dt)
             power = np.abs(np.fft.fft(centred, axis=0))**2 / len(values)

@@ -34,9 +34,15 @@ and cadence mismatches are rejected before ensemble aggregation. Cylindrical
 mode projection now uses the selected-fluid ensemble radial mean, not a CNT
 radius.
 
+`current` now makes both this radius pass and the current-mode pass with the
+streaming reader, retaining only compact mode time series. This removes the
+raw-frame memory cost from current/PSD work while retaining the same
+all-origin estimator.
+
 ## Still deliberately not claimed as complete
 
-- memory-bounded streaming/memmap implementations for very large trajectories;
+- memory-bounded memmap implementations for particle-history portions of very
+  large ISF/VACF trajectories (current is streaming; ISF/VACF are not yet);
 - an exact radial-cylinder continuity current rather than the declared
   thin-shell `m/R_mode` projection;
 - a systematic lab-versus-selected-COM low-k sensitivity analysis;

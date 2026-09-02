@@ -125,7 +125,7 @@ C_{vv}^{\rm construct}(t)=\sum_{n,m}W(n,m)F_s(n,m;t)\Phi_J(n,m;t).
 \]
 
 `fit-current --model damped_carrier` does **not** fit a universal `Gamma(q)` or `omega(q)` law; its
-CSV preserves the pointwise ​`kz`, `m/Rcnt`, `q`, `Gamma`, `omega`, `a`, and `b`
+CSV preserves the pointwise `kz`, `m/R_mode`, `q`, `Gamma`, `omega`, `a`, and `b`
 relation for a later protocol-specific fit.  This avoids pooling C88/C99,
 explicit/implicit, or cadence-distinct data into a synthetic dispersion law.
 
@@ -168,3 +168,13 @@ is not imputed. `construct` joins only identical
 in `constructibility_sum_ensemble_mean_sem.csv`. The matched direct-VACF
 residual is the primary diagnostic; good CJJ alone is not a demonstration of
 VACF closure.
+
+## Memory behaviour
+
+The dump reader itself is iterator-based. `current` performs both its radius
+pass and its current pass by streaming selected frames: it retains only compact
+complex mode time series, not copies of atom tables. `isf` and `vacf` remain
+correctness-first materialized paths at this revision because their all-origin
+particle correlations require a full time history. A dedicated memmap
+correlator is therefore required before routine multi-GB ISF/VACF production;
+do not silently truncate or merge protocol-distinct files to work around RAM.
