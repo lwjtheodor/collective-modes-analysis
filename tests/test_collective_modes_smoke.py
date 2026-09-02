@@ -83,6 +83,11 @@ class CanonicalCommandsSmokeTest(unittest.TestCase):
                 row0 = next(csv.DictReader(handle))
             self.assertEqual(row0["replica"], "rep1")
             self.assertEqual(row0["n_time_origins"], "8")
+            bad = temp_path / "bad_boundary.dump"; axial_dump(bad, range(40, 80, 10))
+            bad.write_text(bad.read_text(encoding="utf-8").replace("1 1 1.400000 0.20", "1 1 1.401000 0.20", 1), encoding="utf-8")
+            result = subprocess.run([sys.executable, str(CLI), "vacf", "--case-id", "joined", "--replica", f"rep1={first},{bad}", "--fluid-types", "1", "--timestep-ps", "0.001", "--output", str(temp_path / "bad"), "--component", "z", "--max-lag-ps", "0.06"], cwd=ROOT, capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("differs from the preceding segment", result.stderr)
 
     def test_vacf_stitch_keeps_native_cadence_layers_and_nonuniform_integral(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

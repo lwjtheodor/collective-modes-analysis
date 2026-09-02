@@ -117,6 +117,7 @@ def _iter_frames_segments(replica: ReplicaSegments, selected_types: tuple[int, .
     reference_ids: np.ndarray | None = None
     reference_box: np.ndarray | None = None
     last_step: int | None = None
+    last_frame: Frame | None = None
     emitted = 0
     for path in replica.segments:
         for raw in iter_frames(path):
@@ -136,8 +137,11 @@ def _iter_frames_segments(replica: ReplicaSegments, selected_types: tuple[int, .
             if last_step is not None and frame.timestep < last_step:
                 raise ValueError(f"replica {replica.replica_id}: segment order is nonmonotonic at {path} step {frame.timestep}")
             if last_step is not None and frame.timestep == last_step:
+                if last_frame is None or frame.fields != last_frame.fields or not np.allclose(frame.bounds, last_frame.bounds, rtol=0.0, atol=1e-10) or not np.allclose(frame.values, last_frame.values, rtol=0.0, atol=1e-10):
+                    raise ValueError(f"replica {replica.replica_id}: duplicate timestep {frame.timestep} at {path} differs from the preceding segment; refusing restart-boundary de-duplication")
                 continue
             last_step = frame.timestep
+            last_frame = frame
             emitted += 1
             yield frame
             if max_frames and emitted >= max_frames:
