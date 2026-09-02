@@ -20,6 +20,7 @@ from .core import (
     cylindrical_basis,
     cylindrical_currents,
     integrate_vacf,
+    integrate_vacf_time,
     stable_order,
     velocity_in_frame,
     velocities,
@@ -432,6 +433,67 @@ def vacf(args) -> None:
     msd_mean = _aggregate(msd_rows, ["case_id", "component", "lag_ps"], ["MSD_from_VACF", "alpha_from_VACF"])
     write_csv(args.output / "msd_alpha_from_vacf_ensemble_mean_sem.csv", msd_mean, list(msd_mean[0]))
     write_metadata(args.output, {"case_id": profile.case_id, "observable": "selected-fluid VACF -> consistent MSD and alpha", "velocity_frame": args.velocity_frame, "component": args.component, "profile": profile.__dict__, "limit": "replica SEM is only independent-configurational uncertainty when manifest says the starts are independent."})
+
+
+def vacf_stitch(args) -> None:
+    """Stitch cadence-specific VACFs by declared physical-lag windows, never raw frames."""
+    manifest = json.loads(args.layer_manifest.read_text(encoding="utf-8"))
+    layers = manifest.get("layers", [])
+    if not layers:
+        raise ValueError("layer manifest needs a nonempty layers array")
+    selected: dict[tuple[str, str], list[dict]] = defaultdict(list)
+    for layer in layers:
+        required = {"layer_id", "csv", "lag_min_ps", "lag_max_ps"}
+        if required - set(layer):
+            raise ValueError(f"VACF layer lacks {sorted(required - set(layer))}")
+        lower, upper = float(layer["lag_min_ps"]), float(layer["lag_max_ps"])
+        if not 0 <= lower < upper:
+            raise ValueError(f"layer {layer['layer_id']}: require 0 <= lag_min_ps < lag_max_ps")
+        source = Path(layer["csv"])
+        with source.open(newline="", encoding="utf-8") as handle:
+            rows = list(csv.DictReader(handle))
+        if not rows:
+            raise ValueError(f"layer {layer['layer_id']}: empty VACF CSV")
+        require_columns(set(rows[0]), {"case_id", "replica", "component", "lag_ps", args.vacf_column}, f"layer {layer['layer_id']} VACF CSV")
+        for row in rows:
+            lag = float(row["lag_ps"])
+            # Half-open windows avoid duplicated points at cadence hand-off.
+            include_lower = bool(layer.get("include_lag_min", lower == 0.0))
+            if ((lag >= lower if include_lower else lag > lower) and lag <= upper):
+                selected[(row["case_id"], row["replica"])].append({
+                    "layer_id": str(layer["layer_id"]), "source_csv": str(source),
+                    "component": row["component"], "lag_ps": lag,
+                    "VACF": float(row[args.vacf_column]),
+                    "n_time_origins": row.get("n_time_origins", ""),
+                })
+    stitched: list[dict] = []; derived: list[dict] = []
+    for (case_id, replica), rows in selected.items():
+        rows.sort(key=lambda row: row["lag_ps"])
+        times = np.asarray([row["lag_ps"] for row in rows], dtype=float)
+        if len(times) < 3 or not np.isclose(times[0], 0.0):
+            raise ValueError(f"{case_id}/{replica}: stitched windows must provide at least three points and start at lag 0")
+        if np.any(np.diff(times) <= 0):
+            raise ValueError(f"{case_id}/{replica}: overlapping layers or duplicate lag points; make windows half-open at hand-offs")
+        components = {row["component"] for row in rows}
+        if len(components) != 1:
+            raise ValueError(f"{case_id}/{replica}: cannot stitch different VACF components")
+        curve = np.asarray([row["VACF"] for row in rows], dtype=float)
+        if np.isclose(curve[0], 0.0):
+            raise ValueError(f"{case_id}/{replica}: VACF(0)=0; normalized stitch undefined")
+        msd, alpha = integrate_vacf_time(times, curve)
+        for index, row in enumerate(rows):
+            stitched.append({"case_id": case_id, "replica": replica, **row, "VACF_normalized": float(curve[index] / curve[0])})
+            derived.append({"case_id": case_id, "replica": replica, "component": row["component"], "lag_ps": row["lag_ps"],
+                            "MSD_from_VACF": float(msd[index]), "alpha_from_VACF": float(alpha[index]), "layer_id": row["layer_id"]})
+    if not stitched:
+        raise ValueError("no VACF rows fall inside the declared stitch windows")
+    write_csv(args.output / "vacf_stitched_per_replica.csv", stitched, list(stitched[0]))
+    mean_vacf = _aggregate(stitched, ["case_id", "component", "lag_ps"], ["VACF", "VACF_normalized"])
+    write_csv(args.output / "vacf_stitched_ensemble_mean_sem.csv", mean_vacf, list(mean_vacf[0]))
+    write_csv(args.output / "msd_alpha_from_stitched_vacf_per_replica.csv", derived, list(derived[0]))
+    mean_derived = _aggregate(derived, ["case_id", "component", "lag_ps"], ["MSD_from_VACF", "alpha_from_VACF"])
+    write_csv(args.output / "msd_alpha_from_stitched_vacf_ensemble_mean_sem.csv", mean_derived, list(mean_derived[0]))
+    write_metadata(args.output, {"observable": "cadence-layer stitched VACF -> nonuniform-grid MSD and alpha", "layer_manifest": str(args.layer_manifest), "vacf_column": args.vacf_column, "stitch_policy": "each input VACF is estimated within its native uniform cadence; declared half-open physical-lag windows select exactly one layer at each output lag; integration uses a nonuniform-grid trapezoid", "limit": "layers must represent the same stationary observable, fluid selection, velocity frame, and component; do not stitch different thermostat/protocol branches."})
 
 
 def construct(args) -> None:

@@ -82,7 +82,8 @@ one uniform cadence, verified against `--timestep-ps`/`--dt-ps`.
 | `audit` | `dump_capabilities.csv` |
 | `isf` | `isf_per_replica.csv`, `isf_ensemble_mean_sem.csv`: `F_total`, `F_self`, `F_distinct` for every `(n,m,lag)` |
 | `current` | `current_per_replica.csv`, ensemble CJJ, ordered cross table, periodogram table; explicit `CJJ_extensive`, `CJJ_per_particle`, `CJJ_normalized`, `n_particles`; separate `Jz`, `Jr`, `Jtheta`, `L`, `Tinplane`, `Tr` |
-| `vacf` | per-rep/ensemble VACF and `msd_alpha_from_vacf_*`; lab/selected-COM/wall-relative is explicit |
+| `vacf` | one native-cadence layer: per-rep/ensemble VACF and `msd_alpha_from_vacf_*`; lab/selected-COM/wall-relative is explicit |
+| `vacf-stitch` | joins separately estimated cadence layers by declared physical-lag windows, then writes nonuniform-grid VACF-MSD-alpha products |
 | `fit-current` | per-replica and ensemble-SEM mode-fit tables; `damped_carrier` is distinct from constrained `dho_physical` |
 | `construct` | per-replica then ensemble `W*Fs*Phi_J`, optional matched direct-VACF residual tables; external static `W(n,m)` only, no amplitude fit |
 | `plot` | a minimal data-readable PNG with zero line and columns named from the CSV |
@@ -178,3 +179,34 @@ correctness-first materialized paths at this revision because their all-origin
 particle correlations require a full time history. A dedicated memmap
 correlator is therefore required before routine multi-GB ISF/VACF production;
 do not silently truncate or merge protocol-distinct files to work around RAM.
+
+## Multirate VACF--MSD--alpha workflow
+
+Do not place 1-fs, 10-fs, and 100-fs dumps into one `--replica`: a single
+`vacf` call intentionally requires uniform cadence. Run `vacf` once per native
+cadence layer, with identical fluid selection, component, and velocity-frame
+definition. Then pass their `vacf_per_replica.csv` files to `vacf-stitch`:
+
+```json
+{
+  "layers": [
+    {"layer_id": "1fs", "csv": "H:/out/vacf_1fs/vacf_per_replica.csv", "lag_min_ps": 0.0, "lag_max_ps": 50.0},
+    {"layer_id": "10fs", "csv": "H:/out/vacf_10fs/vacf_per_replica.csv", "lag_min_ps": 50.0, "lag_max_ps": 500.0, "include_lag_min": false},
+    {"layer_id": "100fs", "csv": "H:/out/vacf_100fs/vacf_per_replica.csv", "lag_min_ps": 500.0, "lag_max_ps": 5000.0, "include_lag_min": false}
+  ]
+}
+```
+
+```powershell
+py scripts/collective_modes_cli.py vacf-stitch `
+  --layer-manifest H:\out\vacf_layers.json `
+  --output H:\out\vacf_stitched
+```
+
+Windows are selected as `[min,max]` for a first layer and `(min,max]` when
+`include_lag_min:false` is declared. They must cover lag zero, be strictly
+nonoverlapping after selection, and contain the same `case_id`, replica,
+component, velocity-frame convention, and stationary physical protocol. The
+stitcher does not interpolate or average overlaps. It records `layer_id` and
+source CSV for every output lag, and integrates the joined VACF with the
+nonuniform-grid trapezoid rule before calculating MSD and alpha.

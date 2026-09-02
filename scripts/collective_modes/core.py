@@ -123,8 +123,20 @@ def complex_cross_acf(a: np.ndarray, b: np.ndarray, max_lag: int) -> np.ndarray:
 def integrate_vacf(vacf: np.ndarray, dt_ps: float) -> tuple[np.ndarray, np.ndarray]:
     """Return consistent 1D MSD and alpha=t I/J from a dimensional VACF."""
     time = np.arange(len(vacf), dtype=float) * dt_ps
-    integral = np.concatenate(([0.0], np.cumsum((vacf[1:] + vacf[:-1]) * 0.5 * dt_ps)))
-    second = np.concatenate(([0.0], np.cumsum((integral[1:] + integral[:-1]) * 0.5 * dt_ps)))
+    return integrate_vacf_time(time, vacf)
+
+
+def integrate_vacf_time(time_ps: np.ndarray, vacf: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Integrate VACF on a strictly increasing, potentially nonuniform lag grid."""
+    time = np.asarray(time_ps, dtype=float)
+    vacf = np.asarray(vacf, dtype=float)
+    if time.ndim != 1 or vacf.ndim != 1 or len(time) != len(vacf):
+        raise ValueError("time and VACF must be equally sized one-dimensional arrays")
+    if len(time) < 2 or not np.isclose(time[0], 0.0) or np.any(np.diff(time) <= 0):
+        raise ValueError("VACF integration requires a strictly increasing lag grid beginning at zero")
+    delta = np.diff(time)
+    integral = np.concatenate(([0.0], np.cumsum((vacf[1:] + vacf[:-1]) * 0.5 * delta)))
+    second = np.concatenate(([0.0], np.cumsum((integral[1:] + integral[:-1]) * 0.5 * delta)))
     msd = 2.0 * second
     alpha = np.full_like(time, np.nan)
     valid = (time > 0) & (second != 0)

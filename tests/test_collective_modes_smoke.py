@@ -84,6 +84,25 @@ class CanonicalCommandsSmokeTest(unittest.TestCase):
             self.assertEqual(row0["replica"], "rep1")
             self.assertEqual(row0["n_time_origins"], "8")
 
+    def test_vacf_stitch_keeps_native_cadence_layers_and_nonuniform_integral(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            temp_path = Path(temp)
+            fine = temp_path / "vacf_1fs.csv"; coarse = temp_path / "vacf_20fs.csv"
+            header = "case_id,replica,component,lag_ps,VACF,n_time_origins\n"
+            fine.write_text(header + "case,rep1,z,0.0,1.0,100\ncase,rep1,z,0.01,0.9,90\ncase,rep1,z,0.02,0.8,80\n", encoding="utf-8")
+            coarse.write_text(header + "case,rep1,z,0.0,1.0,100\ncase,rep1,z,0.02,0.8,80\ncase,rep1,z,0.04,0.6,60\ncase,rep1,z,0.06,0.4,40\n", encoding="utf-8")
+            manifest = temp_path / "layers.json"
+            manifest.write_text('{"layers":[{"layer_id":"1fs","csv":"' + str(fine).replace("\\", "\\\\") + '","lag_min_ps":0.0,"lag_max_ps":0.02},{"layer_id":"20fs","csv":"' + str(coarse).replace("\\", "\\\\") + '","lag_min_ps":0.02,"lag_max_ps":0.06,"include_lag_min":false}]}', encoding="utf-8")
+            output = temp_path / "stitched"
+            self.run_cli("vacf-stitch", "--layer-manifest", str(manifest), "--output", str(output))
+            with (output / "vacf_stitched_per_replica.csv").open() as handle:
+                rows = list(csv.DictReader(handle))
+            self.assertEqual([float(row["lag_ps"]) for row in rows], [0.0, 0.01, 0.02, 0.04, 0.06])
+            self.assertEqual([row["layer_id"] for row in rows], ["1fs", "1fs", "1fs", "20fs", "20fs"])
+            with (output / "msd_alpha_from_stitched_vacf_per_replica.csv").open() as handle:
+                derived = list(csv.DictReader(handle))
+            self.assertTrue(np.isfinite(float(derived[-1]["alpha_from_VACF"])))
+
     def test_cylindrical_phase_and_projection_identities(self) -> None:
         xyz = np.asarray([[6.0, 5.0, 2.0], [5.0, 6.0, 7.0]])
         velocity = np.asarray([[0.3, 1.0, 2.0], [-0.7, 2.0, -1.0]])
