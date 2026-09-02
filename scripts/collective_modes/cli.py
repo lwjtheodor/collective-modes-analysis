@@ -9,12 +9,14 @@ from . import commands
 
 
 def _case_arguments(parser: argparse.ArgumentParser, cylindrical: bool = False) -> None:
-    parser.add_argument("--case-id", required=True); parser.add_argument("--dumps", nargs="+", required=True)
+    parser.add_argument("--case-id", required=True); parser.add_argument("--dumps", nargs="+", help="compatibility shorthand: each file is one independent replica")
+    parser.add_argument("--replica", action="append", help="repeat ID=segment1,segment2 in physical time order; distinct IDs are independent replicas")
+    parser.add_argument("--trajectory-manifest", type=Path, help="JSON manifest with ordered replicas/segments; mutually exclusive with --dumps/--replica")
     parser.add_argument("--output", required=True, type=Path); parser.add_argument("--protocol", default="unspecified")
     parser.add_argument("--fluid-kind", choices=["auto", "water", "oxygen_only", "argon"], default="auto")
     parser.add_argument("--wall-model", choices=["implicit", "explicit_fixed", "explicit_flexible", "unknown"], default="unknown")
     parser.add_argument("--axis-source", choices=["box_center", "fixed", "cnt_atoms", "unknown"], default="box_center" if cylindrical else "unknown")
-    parser.add_argument("--axis-xy", nargs=2, type=float); parser.add_argument("--r-mode-A", "--rcnt-A", dest="rcnt_A", type=float, help="declared thin-shell mode-projection radius; --rcnt-A is a compatibility alias")
+    parser.add_argument("--axis-xy", nargs=2, type=float)
     parser.add_argument("--oxygen-type", type=int); parser.add_argument("--fluid-types", nargs="*", type=int); parser.add_argument("--cnt-types", nargs="*", type=int)
     parser.add_argument("--timestep-ps", type=float); parser.add_argument("--dt-ps", type=float); parser.add_argument("--max-frames", type=int, default=0)
     parser.add_argument("--velocity-frame", choices=["lab", "selected_com", "wall_relative"], default="selected_com")

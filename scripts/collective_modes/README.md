@@ -26,10 +26,16 @@ or declared `--cnt-types` are actually present; a site-only fluid becomes
 declared. Filename hints
 such as `implicit` are recorded as non-authoritative hints only.
 
-For a cylindrical analysis, `--r-mode-A` is the declared thin-shell
-mode-projection radius. `--rcnt-A` remains a compatibility alias, but must not
-be used to blur CNT geometric radius, field radius, and fluid-shell radius.
-For flexible explicit
+For a cylindrical analysis, the thin-shell mode-projection radius is computed
+from the selected fluid itself:
+
+\[
+R_{\rm mode}=\langle r_{\rm selected}\rangle_{\rm all\ selected\ frames}.
+\]
+
+Thus an oxygen/water selection uses the ensemble O radial mean, and an argon
+selection uses the ensemble Ar radial mean. CNT geometric radius and field
+radius are never substituted for this quantity. For flexible explicit
 CNT, the present command intentionally refuses a wall-relative calculation
 until a CNT-frame extractor with actual CNT atoms/velocities is supplied.
 
@@ -41,6 +47,33 @@ until a CNT-frame extractor with actual CNT atoms/velocities is supplied.
 | `id,type,x,y,z,vx,vy,vz` | all above plus cylindrical `Jr/Jtheta/L/Tinplane/Tr`, ordered cross kernels, r/theta VACF |
 | `id,mol,type,x,y,z[,ix,iy,iz],vx,vy,vz` | additionally supports molecular/rotational plugins after their separate gate |
 | CNT atom `x,y,z,vx,vy,vz` with declared CNT types | required later for flexible-CNT wall-relative frame |
+
+## Replica and segment declaration
+
+`--dumps a.dump b.dump` is retained only as shorthand for two independent
+replicas. It must not be used for a continuation trajectory. Declare ordered
+segments explicitly instead:
+
+```powershell
+--replica rep1=water_0_200ps.dump,water_200_1000ps.dump `
+--replica rep2=water_rep2_0_1000ps.dump
+```
+
+or provide `--trajectory-manifest case.json`:
+
+```json
+{
+  "replicas": [
+    {"replica_id": "rep1", "segments": ["water_0_200ps.dump", "water_200_1000ps.dump"]},
+    {"replica_id": "rep2", "segments": ["water_rep2_0_1000ps.dump"]}
+  ]
+}
+```
+
+The order in each `segments` array is physical time order. The reader rejects
+field/selected-ID/box changes and nonmonotonic segment order; an identical
+restart-boundary timestep is de-duplicated. The joined frames must then have
+one uniform cadence, verified against `--timestep-ps`/`--dt-ps`.
 
 ## Commands and principal CSV products
 
@@ -110,13 +143,13 @@ replica SEM, not the nonlinear-fit covariance.
 py scripts/collective_modes_cli.py audit `
   --case-id C88_L5_rep1 --dumps H:\path\water.dump `
   --fluid-types 3 --timestep-ps 0.0005 --wall-model explicit_fixed `
-  --axis-source box_center --r-mode-A 4.07 --output H:\out\audit
+  --axis-source box_center --output H:\out\audit
 
 # 2. Same declared profile; m=0 remains axial and m>0 adds circumference.
 py scripts/collective_modes_cli.py current `
   --case-id C88_L5 --dumps H:\path\rep1.dump H:\path\rep2.dump H:\path\rep3.dump `
   --fluid-types 3 --timestep-ps 0.0005 --wall-model explicit_fixed `
-  --axis-source box_center --r-mode-A 4.07 --n 1:20 --m 0:4 `
+  --axis-source box_center --n 1:20 --m 0:4 `
   --max-lag-ps 100 --output H:\out\current
 
 # 3. Match the same n/m grid for Fs; then construct only from measured W.

@@ -46,7 +46,6 @@ def _profile(args) -> CaseProfile:
         dump_paths=[Path(path) for path in args.dumps],
         wall_model=args.wall_model,
         axis_source=args.axis_source,
-        rcnt_A=args.rcnt_A,
         oxygen_type=args.oxygen_type,
         fluid_types=tuple(args.fluid_types) if args.fluid_types else None,
         cnt_types=tuple(args.cnt_types or ()),
@@ -57,8 +56,6 @@ def _profile(args) -> CaseProfile:
     )
     if profile.axis_source == "fixed" and args.axis_xy is None:
         raise ValueError("--axis-source fixed requires --axis-xy X Y")
-    if profile.wall_model == "implicit" and profile.rcnt_A is None:
-        raise ValueError("--wall-model implicit requires --r-mode-A from protocol metadata")
     if profile.wall_model == "explicit_flexible" and not profile.cnt_types:
         raise ValueError("--wall-model explicit_flexible requires --cnt-types; do not assume a fixed box axis")
     return profile
@@ -85,6 +82,40 @@ def _frames(path: Path, selected_types: tuple[int, ...] | None, max_frames: int)
     return result
 
 
+def _frames_segments(replica: ReplicaSegments, selected_types: tuple[int, ...] | None, max_frames: int) -> list[Frame]:
+    """Read ordered segments with strict protocol gates and restart-boundary de-duplication."""
+    result: list[Frame] = []
+    reference_fields: tuple[str, ...] | None = None
+    reference_ids: np.ndarray | None = None
+    reference_box: np.ndarray | None = None
+    last_step: int | None = None
+    for path in replica.segments:
+        segment = _frames(path, selected_types, 0)
+        if reference_fields is None:
+            reference_fields = segment[0].fields
+            reference_ids = segment[0].column("id").astype(np.int64) if "id" in segment[0].fields else None
+            reference_box = segment[0].bounds
+        for frame in segment:
+            if frame.fields != reference_fields:
+                raise ValueError(f"replica {replica.replica_id}: field protocol changes at {path}: {frame.fields} != {reference_fields}")
+            if reference_ids is not None and not np.array_equal(frame.column("id").astype(np.int64), reference_ids):
+                raise ValueError(f"replica {replica.replica_id}: selected particle IDs change at {path} step {frame.timestep}")
+            if not np.allclose(frame.bounds, reference_box):
+                raise ValueError(f"replica {replica.replica_id}: box bounds change at {path} step {frame.timestep}; split the physical protocol")
+            if last_step is not None and frame.timestep < last_step:
+                raise ValueError(f"replica {replica.replica_id}: segment order is nonmonotonic at {path} step {frame.timestep}")
+            if last_step is not None and frame.timestep == last_step:
+                continue
+            result.append(frame); last_step = frame.timestep
+            if max_frames and len(result) >= max_frames:
+                break
+        if max_frames and len(result) >= max_frames:
+            break
+    if len(result) < 3:
+        raise ValueError(f"replica {replica.replica_id}: need at least three selected frames after segment joining")
+    return result
+
+
 def _axis(frame: Frame, args, profile: CaseProfile) -> np.ndarray:
     if profile.axis_source == "fixed":
         return np.asarray(args.axis_xy, dtype=float)
@@ -106,6 +137,21 @@ def _cadence(frames: list[Frame], profile: CaseProfile, declared_dt: float | Non
     if declared_dt is None:
         raise ValueError("one-frame input needs --dt-ps; otherwise declare --timestep-ps for cadence verification")
     return float(declared_dt)
+
+
+def _ensemble_fluid_r_mode(profile: CaseProfile, args) -> float:
+    """Mode radius is the selected O/Ar ensemble mean radius, never CNT radius."""
+    radius_sum = 0.0; count = 0
+    for replica in profile.replica_segments:
+        frames = _frames_segments(replica, profile.selected_types, args.max_frames)
+        axis = _axis(frames[0], args, profile)
+        for frame in frames:
+            xyz = coordinates(frame)
+            radius, _, _ = cylindrical_basis(xyz, axis)
+            radius_sum += float(radius.sum()); count += len(radius)
+    if count == 0:
+        raise ValueError("cannot determine fluid ensemble radial mode radius from an empty selection")
+    return radius_sum / count
 
 
 def _aggregate(rows: list[dict], keys: list[str], value_fields: list[str], replica_key: str = "replica") -> list[dict]:
@@ -133,17 +179,28 @@ def _assert_unique_rows(rows: list[dict], fields: tuple[str, ...], label: str) -
         seen.add(key)
 
 
+def _assert_case_protocol(reference, frames: list[Frame], dt: float, replica_id: str):
+    candidate = (frames[0].fields, dt)
+    if reference is not None:
+        if candidate[0] != reference[0]:
+            raise ValueError(f"replica {replica_id}: dump fields differ from first replica; do not ensemble-merge different record protocols")
+        if not np.isclose(candidate[1], reference[1]):
+            raise ValueError(f"replica {replica_id}: cadence differs from first replica; do not ensemble-merge")
+    return candidate
+
+
 def audit(args) -> None:
     profile = _profile(args)
     rows = []
-    for source in profile.dump_paths:
+    for replica in profile.replica_segments:
+      for segment_index, source in enumerate(replica.segments, 1):
         schema = inspect_dump(source)
         fields = set(schema.fields)
         support = {name: not bool(requirement.fields - fields) for name, requirement in REQUIREMENTS.items()}
         wall_hint, wall_basis = infer_protocol_hint(source, profile.wall_model, profile.cnt_types, schema)
         fluid_hint, fluid_basis = infer_fluid_hint(source, profile.fluid_kind, schema)
         rows.append({
-            "case_id": profile.case_id, "path": str(source), "bytes": source.stat().st_size,
+            "case_id": profile.case_id, "replica": replica.replica_id, "segment_index": segment_index, "path": str(source), "bytes": source.stat().st_size,
             "fields": " ".join(schema.fields), "atom_types": " ".join(map(str, schema.atom_types)),
             "inferred_content": schema.inferred_content, "inference_confidence": schema.confidence,
             "wall_model_inferred": wall_hint, "wall_model_basis": wall_basis,
@@ -155,7 +212,7 @@ def audit(args) -> None:
     fields = list(rows[0])
     write_csv(args.output / "dump_capabilities.csv", rows, fields)
     write_metadata(args.output, {"case_id": profile.case_id, "protocol_label": profile.protocol_label,
-        "wall_model": profile.wall_model, "axis_source": profile.axis_source, "mode_projection_radius_A": profile.rcnt_A,
+        "wall_model": profile.wall_model, "axis_source": profile.axis_source,
         "important_limit": "dump-content inference detects fields/capabilities only. A water-only dump cannot prove explicit versus implicit CNT; declare wall_model in profile."})
 
 
@@ -163,14 +220,19 @@ def isf(args) -> None:
     profile = _profile(args)
     n_values, m_values = _numbers(args.n), _numbers(args.m)
     per_rows: list[dict] = []
-    for replica, source in enumerate(profile.dump_paths, 1):
-        frames = _frames(source, profile.selected_types, args.max_frames)
+    cylindrical_case = bool(np.any(m_values))
+    r_mode_case = _ensemble_fluid_r_mode(profile, args) if cylindrical_case else 1.0
+    case_protocol = None
+    for replica_spec in profile.replica_segments:
+        replica = replica_spec.replica_id; source = replica_spec.segments[0]
+        frames = _frames_segments(replica_spec, profile.selected_types, args.max_frames)
         cylindrical = bool(np.any(m_values))
         profile.require("cylindrical_isf" if cylindrical else "axial_isf", frames[0].fields)
         dt = _cadence(frames, profile, args.dt_ps)
+        case_protocol = _assert_case_protocol(case_protocol, frames, dt, replica)
         axis = _axis(frames[0], args, profile) if cylindrical else None
         lz = frames[0].box_lengths[2]
-        r_mode = profile.rcnt_A or 1.0
+        r_mode = r_mode_case
         if cylindrical:
             positions = np.asarray([coordinates(frame, unwrapped=True) for frame in frames])
             theta = np.asarray([cylindrical_basis(xyz, axis)[1] for xyz in positions])
@@ -203,16 +265,18 @@ def current(args) -> None:
     if any(n == 0 and m == 0 for n in n_values for m in m_values):
         raise ValueError("current modes exclude (n,m)=(0,0); use a dedicated zero-mode observable if needed")
     cylindrical = bool(np.any(m_values != 0))
+    r_mode_case = _ensemble_fluid_r_mode(profile, args) if cylindrical else 1.0
+    case_protocol = None
     per_rows: list[dict] = []; cross_rows: list[dict] = []; spectrum_rows: list[dict] = []
-    for replica, source in enumerate(profile.dump_paths, 1):
-        frames = _frames(source, profile.selected_types, args.max_frames)
+    for replica_spec in profile.replica_segments:
+        replica = replica_spec.replica_id; source = replica_spec.segments[0]
+        frames = _frames_segments(replica_spec, profile.selected_types, args.max_frames)
         profile.require("cylindrical_current" if cylindrical else "axial_current", frames[0].fields)
         dt = _cadence(frames, profile, args.dt_ps)
+        case_protocol = _assert_case_protocol(case_protocol, frames, dt, replica)
         axis = _axis(frames[0], args, profile) if cylindrical else None
         lz = frames[0].box_lengths[2]
-        if cylindrical and profile.rcnt_A is None:
-            raise ValueError("cylindrical current modes require --rcnt-A as the declared mode-projection radius")
-        r_mode = profile.rcnt_A or 1.0
+        r_mode = r_mode_case
         channels = ("Jz", "Jr", "Jtheta", "L", "Tinplane", "Tr") if cylindrical else ("Jz", "L")
         series: dict[str, list[np.ndarray]] = defaultdict(list)
         for frame in frames:
@@ -270,12 +334,14 @@ def current(args) -> None:
 
 def vacf(args) -> None:
     profile = _profile(args)
-    per_rows: list[dict] = []; msd_rows: list[dict] = []
-    for replica, source in enumerate(profile.dump_paths, 1):
-        frames = _frames(source, profile.selected_types, args.max_frames)
+    per_rows: list[dict] = []; msd_rows: list[dict] = []; case_protocol = None
+    for replica_spec in profile.replica_segments:
+        replica = replica_spec.replica_id; source = replica_spec.segments[0]
+        frames = _frames_segments(replica_spec, profile.selected_types, args.max_frames)
         requirement = "vacf_z" if args.component == "z" else "vacf_cylindrical"
         profile.require(requirement, frames[0].fields)
         dt = _cadence(frames, profile, args.dt_ps)
+        case_protocol = _assert_case_protocol(case_protocol, frames, dt, replica)
         axis = _axis(frames[0], args, profile) if args.component != "z" else frames[0].box_center[:2]
         signal = []
         for frame in frames:

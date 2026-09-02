@@ -25,10 +25,17 @@ formal dataset was analysed with the pre-hotfix code after this correction.
 - axial-only dump execution;
 - two-replica construct isolation and duplicate-key rejection.
 
+## Input-contract extension
+
+The mainline now accepts repeated `--replica ID=segment1,segment2` declarations
+or a JSON `--trajectory-manifest`. Segments are joined in declared order, an
+identical restart-boundary timestep is de-duplicated, and field/selected-ID/box
+and cadence mismatches are rejected before ensemble aggregation. Cylindrical
+mode projection now uses the selected-fluid ensemble radial mean, not a CNT
+radius.
+
 ## Still deliberately not claimed as complete
 
-- a case manifest that distinguishes independent replicas from restart
-  segments;
 - memory-bounded streaming/memmap implementations for very large trajectories;
 - an exact radial-cylinder continuity current rather than the declared
   thin-shell `m/R_mode` projection;

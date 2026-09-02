@@ -43,7 +43,7 @@ class CanonicalCommandsSmokeTest(unittest.TestCase):
     def test_audit_isf_current_vacf_construct_and_plot(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             temp_path = Path(temp); dump = temp_path / "water.dump"; synthetic_dump(dump)
-            common = ["--case-id", "synthetic", "--dumps", str(dump), "--fluid-types", "1", "--timestep-ps", "0.001", "--wall-model", "implicit", "--axis-source", "box_center", "--rcnt-A", "4.0", "--max-frames", "8"]
+            common = ["--case-id", "synthetic", "--dumps", str(dump), "--fluid-types", "1", "--timestep-ps", "0.001", "--wall-model", "implicit", "--axis-source", "box_center", "--max-frames", "8"]
             audit_dir = temp_path / "audit"; self.run_cli("audit", *common, "--output", str(audit_dir))
             with (audit_dir / "dump_capabilities.csv").open() as handle:
                 row = next(csv.DictReader(handle)); self.assertEqual(row["supports_cylindrical_current"], "True")
@@ -71,6 +71,16 @@ class CanonicalCommandsSmokeTest(unittest.TestCase):
                 rows = list(csv.DictReader(handle))
             self.assertEqual({row["channel"] for row in rows}, {"Jz", "L"})
             self.assertIn("CJJ_per_particle", rows[0])
+
+    def test_ordered_segments_deduplicate_restart_boundary(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            temp_path = Path(temp); dump = temp_path / "segment.dump"; axial_dump(dump)
+            output = temp_path / "current"
+            self.run_cli("current", "--case-id", "joined", "--replica", f"rep1={dump},{dump}", "--fluid-types", "1", "--timestep-ps", "0.001", "--output", str(output), "--n", "1", "--m", "0", "--max-lag-ps", "0.06")
+            with (output / "current_per_replica.csv").open() as handle:
+                row0 = next(csv.DictReader(handle))
+            self.assertEqual(row0["replica"], "rep1")
+            self.assertEqual(row0["n_time_origins"], "8")
 
     def test_cylindrical_phase_and_projection_identities(self) -> None:
         xyz = np.asarray([[6.0, 5.0, 2.0], [5.0, 6.0, 7.0]])

@@ -33,14 +33,22 @@ REQUIREMENTS = {
 
 
 @dataclass
+class ReplicaSegments:
+    """One independent replica made of explicitly ordered contiguous dumps."""
+
+    replica_id: str
+    segments: tuple[Path, ...]
+
+
+@dataclass
 class CaseProfile:
     """Explicit protocol metadata.  Auto-detection fills capabilities, not physics."""
 
     case_id: str
     dump_paths: list[Path]
+    replicas: tuple[ReplicaSegments, ...] = ()
     wall_model: WallModel = "unknown"
     axis_source: AxisSource = "unknown"
-    rcnt_A: float | None = None
     oxygen_type: int | None = None
     fluid_types: tuple[int, ...] | None = None
     cnt_types: tuple[int, ...] = ()
@@ -49,6 +57,12 @@ class CaseProfile:
     protocol_label: str = "unspecified"
     fluid_kind: str = "auto"
     source_locators: list[str] = field(default_factory=list)
+
+    @property
+    def replica_segments(self) -> tuple[ReplicaSegments, ...]:
+        if self.replicas:
+            return self.replicas
+        return tuple(ReplicaSegments(str(index), (path,)) for index, path in enumerate(self.dump_paths, 1))
 
     @property
     def selected_types(self) -> tuple[int, ...] | None:
@@ -72,7 +86,7 @@ class CaseProfile:
             )
         if observable.startswith("cylindrical") and self.axis_source == "unknown":
             raise ValueError(
-                f"{self.case_id}: cylindrical observable needs --axis-source and, for analytic CNT, --rcnt-A"
+                f"{self.case_id}: cylindrical observable needs --axis-source; its mode radius is computed from selected-fluid coordinates"
             )
         if self.wall_model == "implicit" and observable == "wall_relative":
             raise ValueError(f"{self.case_id}: implicit CNT has no CNT atom velocities for wall-relative VACF")
