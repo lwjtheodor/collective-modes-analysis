@@ -26,7 +26,7 @@ from .core import (
 )
 from .dump import Frame, infer_fluid_hint, infer_protocol_hint, inspect_dump, iter_frames, validate_uniform_timestep
 from .output import require_columns, write_csv, write_metadata
-from .schema import CaseProfile, REQUIREMENTS
+from .schema import CaseProfile, REQUIREMENTS, ReplicaSegments
 
 
 def _numbers(spec: str) -> np.ndarray:
@@ -41,9 +41,37 @@ def _numbers(spec: str) -> np.ndarray:
 
 
 def _profile(args) -> CaseProfile:
+    input_forms = int(bool(args.dumps)) + int(bool(args.replica)) + int(bool(args.trajectory_manifest))
+    if input_forms != 1:
+        raise ValueError("declare exactly one input form: --dumps, repeated --replica, or --trajectory-manifest")
+    replicas: list[ReplicaSegments] = []
+    if args.trajectory_manifest:
+        manifest = json.loads(args.trajectory_manifest.read_text(encoding="utf-8"))
+        for item in manifest.get("replicas", []):
+            replica_id = str(item.get("replica_id", ""))
+            segments = tuple(Path(path) for path in item.get("segments", []))
+            if not replica_id or not segments:
+                raise ValueError("each manifest replica needs replica_id and a nonempty ordered segments list")
+            replicas.append(ReplicaSegments(replica_id, segments))
+        if not replicas:
+            raise ValueError("trajectory manifest needs a nonempty replicas list")
+    elif args.replica:
+        for declaration in args.replica:
+            if "=" not in declaration:
+                raise ValueError("--replica must use ID=segment1,segment2")
+            replica_id, text = declaration.split("=", 1)
+            segments = tuple(Path(path) for path in text.split(",") if path)
+            if not replica_id or not segments:
+                raise ValueError("--replica needs a nonempty ID and at least one segment")
+            replicas.append(ReplicaSegments(replica_id, segments))
+    else:
+        replicas = [ReplicaSegments(str(index), (Path(path),)) for index, path in enumerate(args.dumps, 1)]
+    if len({replica.replica_id for replica in replicas}) != len(replicas):
+        raise ValueError("replica IDs must be unique")
     profile = CaseProfile(
         case_id=args.case_id,
-        dump_paths=[Path(path) for path in args.dumps],
+        dump_paths=[path for replica in replicas for path in replica.segments],
+        replicas=tuple(replicas),
         wall_model=args.wall_model,
         axis_source=args.axis_source,
         oxygen_type=args.oxygen_type,
